@@ -1,0 +1,2006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1" name="viewport" />
+  <title>Retro IsoSurvive - Enhanced Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    body {
+      font-family: "Press Start 2P", cursive, monospace;
+      background-color: #111;
+      color: #eee;
+      user-select: none;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Retro pixel style for text */
+    h1,
+    h2,
+    h3,
+    p,
+    button,
+    label,
+    span {
+      text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000,
+        -1px 1px 0 #000;
+    }
+    /* Isometric tile with pixel art style */
+    .iso-tile {
+      width: 32px;
+      height: 16px;
+      background: none;
+      position: absolute;
+      font-size: 14px;
+      line-height: 16px;
+      text-align: center;
+      color: #0f0;
+      font-weight: 700;
+      user-select: none;
+      font-family: monospace;
+      text-shadow: 0 0 1px #0f0;
+      cursor: default;
+      transform: skewY(-26.5deg) scaleY(0.75);
+      transform-origin: bottom center;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+    .iso-tile.ground {
+      color: #0a0;
+    }
+    .iso-tile.water {
+      color: #06f;
+    }
+    .iso-tile.tree {
+      color: #2a2;
+    }
+    .iso-tile.building {
+      color: #a60;
+    }
+    .iso-tile.container {
+      color: #ff0;
+    }
+    .iso-tile.player {
+      color: #ff0;
+      font-weight: 900;
+      text-shadow: 0 0 2px #ff0, 0 0 5px #ff0;
+      cursor: pointer;
+      z-index: 2000 !important;
+    }
+    .iso-tile.zombie {
+      color: #f00;
+      font-weight: 900;
+      text-shadow: 0 0 2px #f00, 0 0 5px #f00;
+      cursor: pointer;
+      z-index: 1500 !important;
+    }
+    .iso-tile.dead-zombie {
+      color: #800;
+      font-weight: 400;
+      text-shadow: 0 0 1px #800;
+      z-index: 500 !important;
+    }
+    /* Container for isometric map */
+    #iso-map {
+      width: 640px; /* 20 cols * 32px */
+      height: 320px; /* 20 rows * 16px */
+      position: relative;
+      margin: 0 auto;
+      background-color: #020;
+      border: 2px solid #0f0;
+      box-shadow: 0 0 10px #0f0 inset;
+      user-select: none;
+      flex-shrink: 0;
+      touch-action: none;
+    }
+    /* Scrollbar styling for inventory */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background-color: #0f0;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020;
+    }
+    /* Buttons retro style */
+    button {
+      background-color: #020;
+      border: 2px solid #0f0;
+      color: #0f0;
+      padding: 6px 12px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: background-color 0.2s, color 0.2s;
+      user-select: none;
+      cursor: pointer;
+    }
+    button:hover,
+    button:focus {
+      background-color: #0f0;
+      color: #020;
+      outline: none;
+    }
+    button:disabled {
+      background-color: #444;
+      border-color: #666;
+      color: #666;
+      cursor: not-allowed;
+    }
+    /* Hide right panel on mobile */
+    @media (max-width: 768px) {
+      #right-panel {
+        display: none !important;
+      }
+      #mobile-nav {
+        display: flex !important;
+      }
+    }
+    /* Show right panel on desktop */
+    @media (min-width: 769px) {
+      #mobile-nav {
+        display: none !important;
+      }
+      #right-panel {
+        display: flex !important;
+      }
+    }
+    /* Header and footer styling */
+    header,
+    footer {
+      background-color: #020;
+      border-bottom: 2px solid #0f0;
+      border-top: 2px solid #0f0;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    header {
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #0f0;
+    }
+    header h1 {
+      font-size: 16px;
+      font-weight: 900;
+      color: #0f0;
+      text-shadow: 0 0 5px #0f0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    nav button {
+      margin-left: 8px;
+    }
+    footer {
+      padding: 6px 12px;
+      font-size: 8px;
+      color: #0f0;
+      text-align: center;
+    }
+    /* Panels styling */
+    aside {
+      background-color: #010;
+      border-left: 2px solid #0f0;
+      padding: 8px;
+      font-size: 10px;
+      overflow-y: auto;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+    }
+    main {
+      display: flex;
+      flex-grow: 1;
+      overflow: hidden;
+      color: #0f0;
+      min-height: 0;
+    }
+    /* Scrollable sections */
+    section {
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
+    /* Inventory grid */
+    #inventory-items {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      max-height: 160px;
+      overflow-y: auto;
+      border: 1px solid #0f0;
+      padding: 4px;
+      background-color: #000;
+    }
+    .inventory-item {
+      background-color: #020;
+      border: 1px solid #0f0;
+      padding: 4px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+      font-size: 8px;
+      line-height: 1.1;
+      color: #0f0;
+      text-shadow: 0 0 2px #0f0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 48px;
+      border-radius: 4px;
+      position: relative;
+    }
+    .inventory-item:hover,
+    .inventory-item:focus {
+      background-color: #0f0;
+      color: #000;
+      outline: none;
+    }
+    .inventory-item.equipped {
+      border-color: #ff0;
+      box-shadow: 0 0 4px #ff0;
+    }
+    .inventory-item.damaged {
+      border-color: #f80;
+    }
+    .inventory-item.broken {
+      border-color: #f00;
+      opacity: 0.6;
+    }
+    .inventory-char {
+      font-size: 18px;
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+    .item-durability {
+      position: absolute;
+      bottom: 2px;
+      left: 2px;
+      right: 2px;
+      height: 2px;
+      background: #444;
+      border-radius: 1px;
+    }
+    .item-durability-fill {
+      height: 100%;
+      background: #0f0;
+      border-radius: 1px;
+      transition: width 0.3s;
+    }
+    .item-durability-fill.damaged {
+      background: #f80;
+    }
+    .item-durability-fill.broken {
+      background: #f00;
+    }
+    /* Crafting list */
+    #crafting-list {
+      max-height: 160px;
+      overflow-y: auto;
+      border: 1px solid #0f0;
+      padding: 4px;
+      background-color: #000;
+      font-size: 8px;
+      line-height: 1.2;
+      list-style: none;
+      margin: 0;
+    }
+    #crafting-list li {
+      margin-bottom: 6px;
+      cursor: default;
+      border-bottom: 1px solid #0f0;
+      padding-bottom: 4px;
+    }
+    /* Skills bars */
+    .skill-bar {
+      background-color: #020;
+      border: 1px solid #0f0;
+      height: 8px;
+      width: 100%;
+      margin-top: 2px;
+      position: relative;
+      border-radius: 2px;
+    }
+    .skill-bar-fill {
+      background-color: #0f0;
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+      border-radius: 2px;
+    }
+    /* Scrollbar for skills */
+    #skills-list {
+      max-height: 160px;
+      overflow-y: auto;
+      border: 1px solid #0f0;
+      padding: 4px;
+      background-color: #000;
+      font-size: 8px;
+      line-height: 1.2;
+    }
+    /* Map image pixelated */
+    #map-image {
+      image-rendering: pixelated;
+      border: 1px solid #0f0;
+      width: 100%;
+      max-width: 280px;
+      display: block;
+      margin: 0 auto;
+    }
+    /* Tooltip */
+    .tooltip {
+      position: absolute;
+      background: #000c;
+      border: 1px solid #0f0;
+      padding: 4px 6px;
+      font-size: 8px;
+      pointer-events: none;
+      color: #0f0;
+      border-radius: 3px;
+      white-space: nowrap;
+      z-index: 3000;
+      user-select: none;
+      font-family: monospace;
+      max-width: 200px;
+      white-space: normal;
+    }
+    /* Combat log */
+    #combat-log {
+      max-height: 80px;
+      overflow-y: auto;
+      border: 1px solid #0f0;
+      padding: 4px;
+      background-color: #000;
+      font-size: 7px;
+      line-height: 1.2;
+      margin-top: 8px;
+    }
+    .combat-message {
+      margin-bottom: 2px;
+      color: #0f0;
+    }
+    .combat-message.damage {
+      color: #f00;
+    }
+    .combat-message.heal {
+      color: #0f0;
+    }
+    .combat-message.info {
+      color: #ff0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>
+      <i class="fas fa-dungeon"></i> Retro IsoSurvive - Enhanced
+    </h1>
+    <nav aria-label="Main navigation">
+      <button aria-controls="right-panel" aria-pressed="true" id="btn-inventory">
+        Inventory
+      </button>
+      <button aria-controls="right-panel" aria-pressed="false" id="btn-crafting">
+        Crafting
+      </button>
+      <button aria-controls="right-panel" aria-pressed="false" id="btn-skills">
+        Skills
+      </button>
+      <button aria-controls="right-panel" aria-pressed="false" id="btn-map">
+        Map
+      </button>
+    </nav>
+  </header>
+  <main>
+    <!-- Left panel: Player stats & moodles -->
+    <aside style="width: 160px; padding-right: 8px; border-right: 2px solid #0f0; overflow-y: auto;">
+      <section aria-label="Player Stats">
+        <h2>Player Stats</h2>
+        <p>Health: <span id="health-val">100%</span></p>
+        <p>Hunger: <span id="hunger-val">0%</span></p>
+        <p>Thirst: <span id="thirst-val">0%</span></p>
+        <p>Fatigue: <span id="fatigue-val">0%</span></p>
+        <p>Stress: <span id="stress-val">0%</span></p>
+        <p>Boredom: <span id="boredom-val">0%</span></p>
+        <p>Weight: <span id="weight-val">0/50</span></p>
+      </section>
+      
+      <section aria-label="Equipment" style="margin-top: 12px;">
+        <h2>Equipment</h2>
+        <p>Weapon: <span id="equipped-weapon">None</span></p>
+        <p>Armor: <span id="equipped-armor">None</span></p>
+        <p>Tool: <span id="equipped-tool">None</span></p>
+      </section>
+      
+      <section aria-label="Day and Season" style="margin-top: 12px;">
+        <h2>Day / Night</h2>
+        <p id="time-display">06:00 AM</p>
+        <p id="season-display">Spring</p>
+        <div
+          style="background:#020; border:1px solid #0f0; height:8px; width:100%; margin-top:4px;"
+        >
+          <div id="day-progress" style="background:#0f0; height:100%; width:25%;"></div>
+        </div>
+      </section>
+      
+      <section aria-label="Combat Log" style="margin-top: 12px;">
+        <h2>Combat Log</h2>
+        <div id="combat-log"></div>
+      </section>
+    </aside>
+    
+    <!-- Center panel: Isometric map -->
+    <section
+      aria-label="Isometric game world"
+      id="iso-map"
+      role="application"
+      tabindex="0"
+    ></section>
+    
+    <!-- Right panel: Inventory, Crafting, Skills, Map -->
+    <aside
+      aria-live="polite"
+      id="right-panel"
+      style="
+        width: 280px;
+        padding-left: 8px;
+        border-left: 2px solid #0f0;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      "
+    >
+      <!-- Inventory -->
+      <section aria-label="Inventory" id="inventory-section" style="display: block;">
+        <h2>Inventory</h2>
+        <div style="margin-bottom: 8px;">
+          <button id="btn-equip" disabled>Equip</button>
+          <button id="btn-use" disabled>Use</button>
+          <button id="btn-drop" disabled>Drop</button>
+        </div>
+        <div aria-label="Player inventory items" id="inventory-items" tabindex="0"></div>
+      </section>
+      
+      <!-- Crafting -->
+      <section aria-label="Crafting" id="crafting-section" style="display: none;">
+        <h2>Crafting</h2>
+        <div style="margin-bottom: 8px;">
+          <select id="craft-category">
+            <option value="all">All Items</option>
+            <option value="weapons">Weapons</option>
+            <option value="tools">Tools</option>
+            <option value="food">Food</option>
+            <option value="medical">Medical</option>
+            <option value="clothing">Clothing</option>
+            <option value="materials">Materials</option>
+          </select>
+        </div>
+        <ul aria-label="Crafting recipes" id="crafting-list" tabindex="0"></ul>
+      </section>
+      
+      <!-- Skills -->
+      <section aria-label="Skills and XP" id="skills-section" style="display: none;">
+        <h2>Skills &amp; XP</h2>
+        <div aria-label="Player skills and experience points" id="skills-list" tabindex="0"></div>
+      </section>
+      
+      <!-- Map -->
+      <section aria-label="World Map" id="map-section" style="display: none;">
+        <h2>World Map</h2>
+        <canvas id="map-canvas" width="280" height="280" style="image-rendering: pixelated; border: 1px solid #0f0; display: block; margin: 0 auto;"></canvas>
+        <p style="font-size: 7px; margin-top: 4px;">
+          Towns: Muldraugh, West Point, Louisville, Brandenburg, Echo Creek
+        </p>
+      </section>
+    </aside>
+  </main>
+  
+  <footer
+    aria-label="Player moodles"
+    style="border-top: 2px solid #0f0; background: #020; color: #0f0; font-size: 8px; padding: 6px; text-align: center;"
+  >
+    <span>Health: <span id="footer-health">100%</span></span> | 
+    <span>Hunger: <span id="footer-hunger">0%</span></span> | 
+    <span>Thirst: <span id="footer-thirst">0%</span></span> |
+    <span>Fatigue: <span id="footer-fatigue">0%</span></span> | 
+    <span>Stress: <span id="footer-stress">0%</span></span>
+  </footer>
+  
+  <div id="tooltip" class="tooltip" style="display:none;"></div>
+  
+  <script>
+    // Constants for map size
+    const MAP_COLS = 20;
+    const MAP_ROWS = 20;
+    const TILE_WIDTH = 32;
+    const TILE_HEIGHT = 16;
+
+    // Tile types
+    const TILE_TYPES = {
+      GROUND: ".",
+      WATER: "~",
+      TREE: "T",
+      BUILDING: "#",
+      CONTAINER: "C",
+      ROAD: "=",
+    };
+
+    // Item categories and types
+    const ITEM_CATEGORIES = {
+      WEAPON: "weapon",
+      TOOL: "tool",
+      FOOD: "food",
+      MEDICAL: "medical",
+      CLOTHING: "clothing",
+      MATERIAL: "material",
+      AMMUNITION: "ammunition"
+    };
+
+    // Comprehensive item database
+    const ITEM_DATABASE = {
+      // Melee Weapons
+      "wood_axe": {
+        name: "Wood Axe",
+        category: ITEM_CATEGORIES.WEAPON,
+        type: "melee",
+        char: "⚒",
+        damage: 15,
+        durability: 100,
+        maxDurability: 100,
+        weight: 3,
+        rarity: "common",
+        description: "A basic wooden axe for chopping and combat"
+      },
+      "fire_axe": {
+        name: "Fire Axe",
+        category: ITEM_CATEGORIES.WEAPON,
+        type: "melee",
+        char: "🪓",
+        damage: 25,
+        durability: 150,
+        maxDurability: 150,
+        weight: 4,
+        rarity: "uncommon",
+        description: "Heavy duty fire axe with excellent damage"
+      },
+      "baseball_bat": {
+        name: "Baseball Bat",
+        category: ITEM_CATEGORIES.WEAPON,
+        type: "melee",
+        char: "⚾",
+        damage: 12,
+        durability: 80,
+        maxDurability: 80,
+        weight: 2,
+        rarity: "common",
+        description: "Wooden baseball bat"
+      },
+      "crowbar": {
+        name: "Crowbar",
+        category: ITEM_CATEGORIES.WEAPON,
+        type: "melee",
+        char: "⬆",
+        damage: 18,
+        durability: 120,
+        maxDurability: 120,
+        weight: 3,
+        rarity: "common",
+        description: "Heavy metal crowbar, good for prying and combat"
+      },
+      "kitchen_knife": {
+        name: "Kitchen Knife",
+        category: ITEM_CATEGORIES.WEAPON,
+        type: "melee",
+        char: "🔪",
+        damage: 8,
+        durability: 50,
+        maxDurability: 50,
+        weight: 1,
+        rarity: "common",
+        description: "Sharp kitchen knife"
+      },
+      "hammer": {
+        name: "Hammer",
+        category: ITEM_CATEGORIES.TOOL,
+        type: "tool",
+        char: "🔨",
+        damage: 10,
+        durability: 100,
+        maxDurability: 100,
+        weight: 2,
+        rarity: "common",
+        description: "Useful for construction and combat"
+      },
+      
+      // Tools
+      "screwdriver": {
+        name: "Screwdriver",
+        category: ITEM_CATEGORIES.TOOL,
+        char: "🪛",
+        damage: 5,
+        durability: 60,
+        maxDurability: 60,
+        weight: 1,
+        rarity: "common",
+        description: "Useful for repairs and crafting"
+      },
+      "flashlight": {
+        name: "Flashlight",
+        category: ITEM_CATEGORIES.TOOL,
+        char: "🔦",
+        durability: 50,
+        maxDurability: 50,
+        weight: 1,
+        rarity: "common",
+        description: "Battery-powered flashlight"
+      },
+      
+      // Food Items
+      "canned_beans": {
+        name: "Canned Beans",
+        category: ITEM_CATEGORIES.FOOD,
+        char: "🥫",
+        nutrition: 40,
+        weight: 1,
+        rarity: "common",
+        spoilage: false,
+        description: "Nutritious canned beans"
+      },
+      "bread": {
+        name: "Bread",
+        category: ITEM_CATEGORIES.FOOD,
+        char: "🍞",
+        nutrition: 25,
+        weight: 1,
+        rarity: "common",
+        spoilage: true,
+        spoilageTime: 72,
+        description: "Fresh bread loaf"
+      },
+      "water_bottle": {
+        name: "Water Bottle",
+        category: ITEM_CATEGORIES.FOOD,
+        char: "💧",
+        hydration: 50,
+        weight: 1,
+        rarity: "common",
+        description: "Clean drinking water"
+      },
+      
+      // Medical Supplies
+      "bandage": {
+        name: "Bandage",
+        category: ITEM_CATEGORIES.MEDICAL,
+        char: "🩹",
+        healing: 15,
+        weight: 0.2,
+        rarity: "common",
+        stackable: true,
+        maxStack: 10,
+        description: "Basic medical bandage"
+      },
+      "first_aid_kit": {
+        name: "First Aid Kit",
+        category: ITEM_CATEGORIES.MEDICAL,
+        char: "🏥",
+        healing: 40,
+        weight: 2,
+        rarity: "uncommon",
+        description: "Complete first aid kit"
+      },
+      
+      // Clothing & Armor
+      "leather_jacket": {
+        name: "Leather Jacket",
+        category: ITEM_CATEGORIES.CLOTHING,
+        char: "🧥",
+        protection: 5,
+        durability: 80,
+        maxDurability: 80,
+        weight: 3,
+        rarity: "uncommon",
+        description: "Tough leather jacket"
+      },
+      "backpack": {
+        name: "Backpack",
+        category: ITEM_CATEGORIES.CLOTHING,
+        char: "🎒",
+        weightCapacity: 20,
+        durability: 60,
+        maxDurability: 60,
+        weight: 2,
+        rarity: "common",
+        description: "Increases carrying capacity"
+      },
+      
+      // Materials
+      "wood_plank": {
+        name: "Wood Plank",
+        category: ITEM_CATEGORIES.MATERIAL,
+        char: "🪵",
+        weight: 2,
+        rarity: "common",
+        stackable: true,
+        maxStack: 10,
+        description: "Wooden plank for construction"
+      },
+      "nails": {
+        name: "Nails",
+        category: ITEM_CATEGORIES.MATERIAL,
+        char: "📎",
+        weight: 0.1,
+        rarity: "common",
+        stackable: true,
+        maxStack: 50,
+        description: "Metal nails for construction"
+      }
+    };
+
+    // Player state with enhanced properties
+    const player = {
+      x: 10,
+      y: 10,
+      inventory: [],
+      equipped: {
+        weapon: null,
+        armor: null,
+        tool: null
+      },
+      skills: {
+        carpentry: 1,
+        medical: 1,
+        combat: 1,
+        stealth: 1,
+        crafting: 1,
+        cooking: 1
+      },
+      stats: {
+        health: 100,
+        maxHealth: 100,
+        hunger: 0,
+        thirst: 0,
+        fatigue: 0,
+        stress: 0,
+        boredom: 0,
+        weight: 0,
+        maxWeight: 50
+      }
+    };
+
+    // Enhanced zombie types
+    const ZOMBIE_TYPES = {
+      shambler: {
+        name: "Shambler",
+        char: "Z",
+        health: 30,
+        damage: 8,
+        speed: 0.5,
+        detection: 8,
+        description: "Slow moving zombie"
+      },
+      runner: {
+        name: "Runner",
+        char: "R",
+        health: 20,
+        damage: 12,
+        speed: 1.5,
+        detection: 12,
+        description: "Fast moving zombie"
+      }
+    };
+
+    // Map data and game state
+    let mapData = [];
+    let containers = {};
+    let zombies = [];
+    let deadZombies = [];
+    let selectedInventoryItem = null;
+    let combatLog = [];
+
+    // HTML elements
+    const isoMap = document.getElementById("iso-map");
+    const inventoryContainer = document.getElementById("inventory-items");
+    const craftingList = document.getElementById("crafting-list");
+    const skillsList = document.getElementById("skills-list");
+    const combatLogDiv = document.getElementById("combat-log");
+    const tooltip = document.getElementById("tooltip");
+    const mapCanvas = document.getElementById("map-canvas");
+    const mapCtx = mapCanvas.getContext("2d");
+
+    // UI elements
+    const healthVal = document.getElementById("health-val");
+    const hungerVal = document.getElementById("hunger-val");
+    const thirstVal = document.getElementById("thirst-val");
+    const fatigueVal = document.getElementById("fatigue-val");
+    const stressVal = document.getElementById("stress-val");
+    const boredomVal = document.getElementById("boredom-val");
+    const weightVal = document.getElementById("weight-val");
+    const timeDisplay = document.getElementById("time-display");
+    const seasonDisplay = document.getElementById("season-display");
+    const dayProgress = document.getElementById("day-progress");
+    
+    const equippedWeapon = document.getElementById("equipped-weapon");
+    const equippedArmor = document.getElementById("equipped-armor");
+    const equippedTool = document.getElementById("equipped-tool");
+    
+    const btnEquip = document.getElementById("btn-equip");
+    const btnUse = document.getElementById("btn-use");
+    const btnDrop = document.getElementById("btn-drop");
+
+    // Enhanced loot generation
+    function generateLoot() {
+      const lootPool = [];
+      const rarityWeights = { common: 60, uncommon: 30, rare: 10 };
+      
+      for (const [itemId, item] of Object.entries(ITEM_DATABASE)) {
+        const weight = rarityWeights[item.rarity] || 10;
+        for (let i = 0; i < weight; i++) {
+          lootPool.push(itemId);
+        }
+      }
+      
+      const lootCount = 1 + Math.floor(Math.random() * 3);
+      const loot = [];
+      
+      for (let i = 0; i < lootCount; i++) {
+        const itemId = lootPool[Math.floor(Math.random() * lootPool.length)];
+        const itemTemplate = ITEM_DATABASE[itemId];
+        const item = createItem(itemId, itemTemplate);
+        loot.push(item);
+      }
+      
+      return loot;
+    }
+
+    // Create item instance from template
+    function createItem(itemId, template) {
+      const item = {
+        id: itemId,
+        ...JSON.parse(JSON.stringify(template)),
+        instanceId: Date.now() + Math.random()
+      };
+      
+      if (template.stackable) {
+        item.quantity = 1 + Math.floor(Math.random() * (template.maxStack / 4));
+      }
+      
+      if (template.durability) {
+        item.durability = Math.floor(template.maxDurability * (0.5 + Math.random() * 0.5));
+      }
+      
+      return item;
+    }
+
+    // Enhanced map generation
+    function generateMap() {
+      mapData = [];
+      containers = {};
+      zombies = [];
+      deadZombies = [];
+
+      // Initialize all tiles as ground
+      for (let y = 0; y < MAP_ROWS; y++) {
+        const row = [];
+        for (let x = 0; x < MAP_COLS; x++) {
+          row.push(TILE_TYPES.GROUND);
+        }
+        mapData.push(row);
+      }
+
+      // Add water bodies
+      for (let i = 0; i < 3; i++) {
+        const lakeX = Math.floor(Math.random() * (MAP_COLS - 5));
+        const lakeY = Math.floor(Math.random() * (MAP_ROWS - 5));
+        for (let y = lakeY; y < lakeY + 3; y++) {
+          for (let x = lakeX; x < lakeX + 5; x++) {
+            if (x < MAP_COLS && y < MAP_ROWS) {
+              mapData[y][x] = TILE_TYPES.WATER;
+            }
+          }
+        }
+      }
+
+      // Add trees
+      for (let i = 0; i < 50; i++) {
+        const tx = Math.floor(Math.random() * MAP_COLS);
+        const ty = Math.floor(Math.random() * MAP_ROWS);
+        if (mapData[ty][tx] === TILE_TYPES.GROUND) {
+          mapData[ty][tx] = TILE_TYPES.TREE;
+        }
+      }
+
+      // Generate buildings with enhanced loot
+      const houseCount = 8;
+      for (let i = 0; i < houseCount; i++) {
+        const houseWidth = 3 + Math.floor(Math.random() * 3);
+        const houseHeight = 3 + Math.floor(Math.random() * 2);
+        const startX = Math.floor(Math.random() * (MAP_COLS - houseWidth));
+        const startY = Math.floor(Math.random() * (MAP_ROWS - houseHeight));
+
+        let canPlace = true;
+        for (let y = startY; y < startY + houseHeight; y++) {
+          for (let x = startX; x < startX + houseWidth; x++) {
+            if (
+              x >= MAP_COLS ||
+              y >= MAP_ROWS ||
+              mapData[y][x] !== TILE_TYPES.GROUND
+            ) {
+              canPlace = false;
+              break;
+            }
+          }
+          if (!canPlace) break;
+        }
+        if (!canPlace) continue;
+
+        // Place building tiles
+        for (let y = startY; y < startY + houseHeight; y++) {
+          for (let x = startX; x < startX + houseWidth; x++) {
+            mapData[y][x] = TILE_TYPES.BUILDING;
+          }
+        }
+
+        // Place containers with enhanced loot
+        const containerCount = 1 + Math.floor(Math.random() * 2);
+        for (let c = 0; c < containerCount; c++) {
+          let cx, cy;
+          let tries = 0;
+          do {
+            cx = startX + 1 + Math.floor(Math.random() * (houseWidth - 2));
+            cy = startY + 1 + Math.floor(Math.random() * (houseHeight - 2));
+            tries++;
+          } while (
+            (mapData[cy][cx] !== TILE_TYPES.BUILDING || containers[`${cx},${cy}`]) &&
+            tries < 10
+          );
+          if (tries >= 10) continue;
+          
+          mapData[cy][cx] = TILE_TYPES.CONTAINER;
+          containers[`${cx},${cy}`] = generateLoot();
+        }
+      }
+
+      // Generate roads
+      const roadY = Math.floor(MAP_ROWS / 2);
+      for (let x = 0; x < MAP_COLS; x++) {
+        if (mapData[roadY][x] === TILE_TYPES.GROUND) {
+          mapData[roadY][x] = TILE_TYPES.ROAD;
+        }
+      }
+      const roadX = Math.floor(MAP_COLS / 2);
+      for (let y = 0; y < MAP_ROWS; y++) {
+        if (mapData[y][roadX] === TILE_TYPES.GROUND) {
+          mapData[y][roadX] = TILE_TYPES.ROAD;
+        }
+      }
+
+      // Generate diverse zombie types
+      const zombieCount = 8 + Math.floor(Math.random() * 5);
+      zombies = [];
+      for (let i = 0; i < zombieCount; i++) {
+        let zx, zy;
+        let tries = 0;
+        do {
+          zx = Math.floor(Math.random() * MAP_COLS);
+          zy = Math.floor(Math.random() * MAP_ROWS);
+          tries++;
+        } while (
+          (mapData[zy][zx] === TILE_TYPES.WATER ||
+            mapData[zy][zx] === TILE_TYPES.BUILDING ||
+            mapData[zy][zx] === TILE_TYPES.CONTAINER) &&
+          tries < 20
+        );
+        if (tries >= 20) continue;
+        
+        const typeKeys = Object.keys(ZOMBIE_TYPES);
+        const zombieType = typeKeys[Math.floor(Math.random() * typeKeys.length)];
+        const template = ZOMBIE_TYPES[zombieType];
+        
+        zombies.push({
+          x: zx,
+          y: zy,
+          type: zombieType,
+          state: "wandering",
+          health: template.health,
+          maxHealth: template.health,
+          lastPlayerPos: null,
+          searchTimer: 0,
+          id: `zombie-${i}`,
+          template: template
+        });
+      }
+    }
+
+    // Combat system
+    function playerAttackZombie(zombie) {
+      const weapon = player.equipped.weapon;
+      let damage = 5; // Base unarmed damage
+      
+      if (weapon) {
+        damage = weapon.damage || 5;
+        // Reduce weapon durability
+        if (weapon.durability) {
+          weapon.durability = Math.max(0, weapon.durability - 1);
+          if (weapon.durability === 0) {
+            addCombatMessage(`${weapon.name} broke!`, "info");
+            player.equipped.weapon = null;
+          }
+        }
+      }
+      
+      // Add skill bonus
+      damage += Math.floor(player.skills.combat / 2);
+      
+      // Random damage variation
+      damage = Math.floor(damage * (0.8 + Math.random() * 0.4));
+      
+      zombie.health -= damage;
+      addCombatMessage(`You deal ${damage} damage to ${zombie.template.name}`, "damage");
+      
+      if (zombie.health <= 0) {
+        addCombatMessage(`${zombie.template.name} defeated!`, "info");
+        deadZombies.push({
+          x: zombie.x,
+          y: zombie.y,
+          type: zombie.type
+        });
+        const index = zombies.indexOf(zombie);
+        zombies.splice(index, 1);
+        
+        // Gain combat XP
+        player.skills.combat = Math.min(100, player.skills.combat + 2);
+        
+        // Chance to drop loot
+        if (Math.random() < 0.3) {
+          const loot = generateLoot();
+          containers[`${zombie.x},${zombie.y}`] = loot.slice(0, 1);
+        }
+      }
+    }
+
+    function zombieAttackPlayer(zombie) {
+      let damage = zombie.template.damage;
+      
+      // Reduce damage based on armor
+      if (player.equipped.armor && player.equipped.armor.protection) {
+        damage = Math.max(1, damage - player.equipped.armor.protection);
+        // Reduce armor durability
+        if (player.equipped.armor.durability) {
+          player.equipped.armor.durability = Math.max(0, player.equipped.armor.durability - 1);
+          if (player.equipped.armor.durability === 0) {
+            addCombatMessage(`${player.equipped.armor.name} broke!`, "info");
+            player.equipped.armor = null;
+          }
+        }
+      }
+      
+      player.stats.health = Math.max(0, player.stats.health - damage);
+      player.stats.stress = Math.min(100, player.stats.stress + 5);
+      
+      addCombatMessage(`${zombie.template.name} deals ${damage} damage to you!`, "damage");
+      
+      if (player.stats.health <= 0) {
+        addCombatMessage("You have died!", "damage");
+        alert("Game Over! You have been killed by zombies.");
+        // Reset game
+        player.stats.health = 100;
+        player.x = 10;
+        player.y = 10;
+        generateMap();
+      }
+    }
+
+    // Combat log system
+    function addCombatMessage(message, type = "info") {
+      combatLog.unshift({ message, type, time: Date.now() });
+      if (combatLog.length > 20) {
+        combatLog.pop();
+      }
+      renderCombatLog();
+    }
+
+    function renderCombatLog() {
+      combatLogDiv.innerHTML = "";
+      combatLog.slice(0, 10).forEach(entry => {
+        const div = document.createElement("div");
+        div.classList.add("combat-message", entry.type);
+        div.textContent = entry.message;
+        combatLogDiv.appendChild(div);
+      });
+    }
+
+    // Render map and entities
+    function renderMap() {
+      isoMap.innerHTML = "";
+
+      // Draw tiles
+      for (let y = 0; y < MAP_ROWS; y++) {
+        for (let x = 0; x < MAP_COLS; x++) {
+          const tileType = mapData[y][x];
+          const tile = document.createElement("div");
+          tile.classList.add("iso-tile");
+          tile.style.left = x * TILE_WIDTH + "px";
+          tile.style.top = y * TILE_HEIGHT + "px";
+
+          switch (tileType) {
+            case TILE_TYPES.GROUND:
+              tile.classList.add("ground");
+              tile.textContent = ".";
+              break;
+            case TILE_TYPES.WATER:
+              tile.classList.add("water");
+              tile.textContent = "~";
+              break;
+            case TILE_TYPES.TREE:
+              tile.classList.add("tree");
+              tile.textContent = "♣";
+              break;
+            case TILE_TYPES.BUILDING:
+              tile.classList.add("building");
+              tile.textContent = "█";
+              break;
+            case TILE_TYPES.CONTAINER:
+              tile.classList.add("container");
+              tile.textContent = "■";
+              tile.tabIndex = 0;
+              tile.setAttribute("role", "button");
+              tile.setAttribute("aria-label", `Container with loot, position ${x},${y}`);
+              tile.addEventListener("click", () => openContainer(x, y));
+              tile.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  openContainer(x, y);
+                  e.preventDefault();
+                }
+              });
+              break;
+            case TILE_TYPES.ROAD:
+              tile.classList.add("ground");
+              tile.textContent = "=";
+              break;
+            default:
+              tile.classList.add("ground");
+              tile.textContent = ".";
+          }
+          isoMap.appendChild(tile);
+        }
+      }
+
+      // Draw dead zombies
+      deadZombies.forEach((z) => {
+        const zDiv = document.createElement("div");
+        zDiv.classList.add("iso-tile", "dead-zombie");
+        zDiv.style.left = z.x * TILE_WIDTH + "px";
+        zDiv.style.top = z.y * TILE_HEIGHT + "px";
+        zDiv.textContent = "x";
+        zDiv.title = `Dead ${z.type}`;
+        isoMap.appendChild(zDiv);
+      });
+
+      // Draw zombies
+      zombies.forEach((z) => {
+        const zDiv = document.createElement("div");
+        zDiv.classList.add("iso-tile", "zombie");
+        zDiv.style.left = z.x * TILE_WIDTH + "px";
+        zDiv.style.top = z.y * TILE_HEIGHT + "px";
+        zDiv.textContent = z.template.char;
+        zDiv.title = `${z.template.name} (${z.health}/${z.maxHealth} HP)`;
+        zDiv.setAttribute("aria-label", `${z.template.name} at ${z.x},${z.y}`);
+        zDiv.addEventListener("click", () => {
+          if (Math.abs(z.x - player.x) <= 1 && Math.abs(z.y - player.y) <= 1) {
+            playerAttackZombie(z);
+            renderMap();
+            updatePlayerStats();
+          }
+        });
+        isoMap.appendChild(zDiv);
+      });
+
+      // Draw player
+      const playerDiv = document.createElement("div");
+      playerDiv.classList.add("iso-tile", "player");
+      playerDiv.style.left = player.x * TILE_WIDTH + "px";
+      playerDiv.style.top = player.y * TILE_HEIGHT + "px";
+      playerDiv.textContent = "@";
+      playerDiv.setAttribute("aria-label", "Player character");
+      isoMap.appendChild(playerDiv);
+    }
+
+    // Open container loot UI
+    function openContainer(x, y) {
+      const key = `${x},${y}`;
+      const loot = containers[key];
+      if (!loot || loot.length === 0) {
+        addCombatMessage("Container is empty.", "info");
+        return;
+      }
+      
+      let lootText = "You found:\n";
+      loot.forEach((item) => {
+        lootText += `- ${item.name}`;
+        if (item.quantity) lootText += ` x${item.quantity}`;
+        if (item.durability) lootText += ` (${Math.floor((item.durability / item.maxDurability) * 100)}%)`;
+        lootText += "\n";
+      });
+      
+      if (confirm(lootText + "\nTake all items into your inventory?")) {
+        loot.forEach((item) => {
+          if (canAddToInventory(item)) {
+            player.inventory.push(item);
+            player.stats.weight += item.weight || 0;
+          }
+        });
+        containers[key] = [];
+        renderInventory();
+        renderMap();
+        updatePlayerStats();
+        addCombatMessage("Items collected from container.", "info");
+      }
+    }
+
+    // Inventory management
+    function canAddToInventory(item) {
+      const newWeight = player.stats.weight + (item.weight || 0);
+      return newWeight <= player.stats.maxWeight;
+    }
+
+    function renderInventory() {
+      inventoryContainer.innerHTML = "";
+      if (player.inventory.length === 0) {
+        const empty = document.createElement("div");
+        empty.textContent = "Inventory is empty.";
+        empty.style.fontSize = "8px";
+        empty.style.color = "#0f0";
+        inventoryContainer.appendChild(empty);
+        return;
+      }
+      
+      player.inventory.forEach((item, idx) => {
+        const div = document.createElement("div");
+        div.classList.add("inventory-item");
+        div.tabIndex = 0;
+        div.dataset.index = idx;
+        
+        // Check if equipped
+        if (player.equipped.weapon === item || 
+            player.equipped.armor === item || 
+            player.equipped.tool === item) {
+          div.classList.add("equipped");
+        }
+        
+        // Check durability status
+        if (item.durability !== undefined) {
+          const durabilityPercent = (item.durability / item.maxDurability) * 100;
+          if (durabilityPercent <= 25) {
+            div.classList.add("broken");
+          } else if (durabilityPercent <= 50) {
+            div.classList.add("damaged");
+          }
+        }
+        
+        const charSpan = document.createElement("span");
+        charSpan.classList.add("inventory-char");
+        charSpan.textContent = item.char || "?";
+        div.appendChild(charSpan);
+        
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = item.name;
+        if (item.quantity) nameSpan.textContent += ` x${item.quantity}`;
+        div.appendChild(nameSpan);
+        
+        // Add durability bar
+        if (item.durability !== undefined) {
+          const durabilityBar = document.createElement("div");
+          durabilityBar.classList.add("item-durability");
+          const durabilityFill = document.createElement("div");
+          durabilityFill.classList.add("item-durability-fill");
+          const durabilityPercent = (item.durability / item.maxDurability) * 100;
+          durabilityFill.style.width = durabilityPercent + "%";
+          if (durabilityPercent <= 25) {
+            durabilityFill.classList.add("broken");
+          } else if (durabilityPercent <= 50) {
+            durabilityFill.classList.add("damaged");
+          }
+          durabilityBar.appendChild(durabilityFill);
+          div.appendChild(durabilityBar);
+        }
+        
+        div.addEventListener("click", () => selectInventoryItem(idx));
+        inventoryContainer.appendChild(div);
+      });
+    }
+
+    function selectInventoryItem(index) {
+      selectedInventoryItem = index;
+      const item = player.inventory[index];
+      
+      // Update button states
+      btnEquip.disabled = !canEquipItem(item);
+      btnUse.disabled = !canUseItem(item);
+      btnDrop.disabled = false;
+      
+      // Visual feedback
+      document.querySelectorAll(".inventory-item").forEach((div, idx) => {
+        if (idx === index) {
+          div.style.backgroundColor = "#0f0";
+          div.style.color = "#000";
+        } else {
+          div.style.backgroundColor = "";
+          div.style.color = "";
+        }
+      });
+    }
+
+    function canEquipItem(item) {
+      return item.category === ITEM_CATEGORIES.WEAPON || 
+             item.category === ITEM_CATEGORIES.CLOTHING || 
+             item.category === ITEM_CATEGORIES.TOOL;
+    }
+
+    function canUseItem(item) {
+      return item.category === ITEM_CATEGORIES.FOOD || 
+             item.category === ITEM_CATEGORIES.MEDICAL;
+    }
+
+    function equipItem() {
+      if (selectedInventoryItem === null) return;
+      const item = player.inventory[selectedInventoryItem];
+      
+      if (item.category === ITEM_CATEGORIES.WEAPON) {
+        if (player.equipped.weapon) {
+          addCombatMessage(`Unequipped ${player.equipped.weapon.name}`, "info");
+        }
+        player.equipped.weapon = item;
+        addCombatMessage(`Equipped ${item.name}`, "info");
+      } else if (item.category === ITEM_CATEGORIES.CLOTHING) {
+        if (item.protection !== undefined) {
+          if (player.equipped.armor) {
+            addCombatMessage(`Unequipped ${player.equipped.armor.name}`, "info");
+          }
+          player.equipped.armor = item;
+          addCombatMessage(`Equipped ${item.name}`, "info");
+        }
+        if (item.weightCapacity !== undefined) {
+          player.stats.maxWeight += item.weightCapacity;
+          addCombatMessage(`Weight capacity increased by ${item.weightCapacity}`, "info");
+        }
+      } else if (item.category === ITEM_CATEGORIES.TOOL) {
+        if (player.equipped.tool) {
+          addCombatMessage(`Unequipped ${player.equipped.tool.name}`, "info");
+        }
+        player.equipped.tool = item;
+        addCombatMessage(`Equipped ${item.name}`, "info");
+      }
+      
+      updateEquipmentDisplay();
+      renderInventory();
+    }
+
+    function useItem() {
+      if (selectedInventoryItem === null) return;
+      const item = player.inventory[selectedInventoryItem];
+      
+      if (item.category === ITEM_CATEGORIES.FOOD) {
+        if (item.nutrition) {
+          player.stats.hunger = Math.max(0, player.stats.hunger - item.nutrition);
+          addCombatMessage(`Ate ${item.name}. Hunger reduced.`, "heal");
+        }
+        if (item.hydration) {
+          player.stats.thirst = Math.max(0, player.stats.thirst - item.hydration);
+          addCombatMessage(`Drank ${item.name}. Thirst reduced.`, "heal");
+        }
+        removeItemFromInventory(selectedInventoryItem);
+      } else if (item.category === ITEM_CATEGORIES.MEDICAL) {
+        if (item.healing) {
+          player.stats.health = Math.min(player.stats.maxHealth, player.stats.health + item.healing);
+          addCombatMessage(`Used ${item.name}. Health restored.`, "heal");
+        }
+        removeItemFromInventory(selectedInventoryItem);
+      }
+      
+      selectedInventoryItem = null;
+      updatePlayerStats();
+      renderInventory();
+    }
+
+    function dropItem() {
+      if (selectedInventoryItem === null) return;
+      const item = player.inventory[selectedInventoryItem];
+      
+      // Unequip if equipped
+      if (player.equipped.weapon === item) player.equipped.weapon = null;
+      if (player.equipped.armor === item) player.equipped.armor = null;
+      if (player.equipped.tool === item) player.equipped.tool = null;
+      
+      removeItemFromInventory(selectedInventoryItem);
+      addCombatMessage(`Dropped ${item.name}`, "info");
+      selectedInventoryItem = null;
+      updateEquipmentDisplay();
+      renderInventory();
+      updatePlayerStats();
+    }
+
+    function removeItemFromInventory(index) {
+      const item = player.inventory[index];
+      player.stats.weight -= item.weight || 0;
+      player.inventory.splice(index, 1);
+    }
+
+    function updateEquipmentDisplay() {
+      equippedWeapon.textContent = player.equipped.weapon ? player.equipped.weapon.name : "None";
+      equippedArmor.textContent = player.equipped.armor ? player.equipped.armor.name : "None";
+      equippedTool.textContent = player.equipped.tool ? player.equipped.tool.name : "None";
+    }
+
+    // Enhanced crafting system
+    const CRAFTING_RECIPES = {
+      "nailed_bat": {
+        name: "Nailed Baseball Bat",
+        category: "weapons",
+        components: [
+          { item: "baseball_bat", quantity: 1 },
+          { item: "nails", quantity: 10 }
+        ],
+        tools: ["hammer"],
+        skill: { carpentry: 2 },
+        result: "nailed_bat",
+        description: "Upgrade a baseball bat with nails"
+      },
+      "basic_spear": {
+        name: "Basic Spear",
+        category: "weapons",
+        components: [
+          { item: "wood_plank", quantity: 2 },
+          { item: "kitchen_knife", quantity: 1 }
+        ],
+        tools: ["hammer"],
+        skill: { carpentry: 1 },
+        result: "basic_spear",
+        description: "Craft a basic wooden spear"
+      }
+    };
+
+    function renderCrafting() {
+      craftingList.innerHTML = "";
+      const selectedCategory = document.getElementById("craft-category")?.value || "all";
+      
+      for (const [recipeId, recipe] of Object.entries(CRAFTING_RECIPES)) {
+        if (selectedCategory !== "all" && recipe.category !== selectedCategory) continue;
+        
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <strong>${recipe.name}</strong><br>
+          ${recipe.description}<br>
+          <small>Components: ${recipe.components.map(c => `${ITEM_DATABASE[c.item]?.name || c.item} x${c.quantity}`).join(", ")}</small><br>
+          <small>Tools: ${recipe.tools.join(", ")}</small><br>
+          <small>Skill: ${Object.entries(recipe.skill).map(([skill, level]) => `${skill} ${level}`).join(", ")}</small>
+        `;
+        
+        const craftBtn = document.createElement("button");
+        craftBtn.textContent = "Craft";
+        craftBtn.style.marginTop = "4px";
+        craftBtn.disabled = !canCraftRecipe(recipe);
+        craftBtn.addEventListener("click", () => craftItem(recipe));
+        
+        li.appendChild(document.createElement("br"));
+        li.appendChild(craftBtn);
+        craftingList.appendChild(li);
+      }
+    }
+
+    function canCraftRecipe(recipe) {
+      // Check skill requirements
+      for (const [skill, level] of Object.entries(recipe.skill)) {
+        if (player.skills[skill] < level) return false;
+      }
+      
+      // Check components
+      for (const component of recipe.components) {
+        const count = player.inventory.filter(item => item.id === component.item).reduce((sum, item) => sum + (item.quantity || 1), 0);
+        if (count < component.quantity) return false;
+      }
+      
+      // Check tools
+      for (const tool of recipe.tools) {
+        const hasTool = player.inventory.some(item => item.name.toLowerCase().includes(tool.toLowerCase()));
+        if (!hasTool) return false;
+      }
+      
+      return true;
+    }
+
+    function craftItem(recipe) {
+      if (!canCraftRecipe(recipe)) return;
+      
+      // Remove components
+      for (const component of recipe.components) {
+        let remaining = component.quantity;
+        for (let i = player.inventory.length - 1; i >= 0 && remaining > 0; i--) {
+          const item = player.inventory[i];
+          if (item.id === component.item) {
+            const takeAmount = Math.min(remaining, item.quantity || 1);
+            remaining -= takeAmount;
+            
+            if (item.quantity) {
+              item.quantity -= takeAmount;
+              if (item.quantity <= 0) {
+                player.inventory.splice(i, 1);
+              }
+            } else {
+              player.inventory.splice(i, 1);
+            }
+          }
+        }
+      }
+      
+      // Create result item
+      if (ITEM_DATABASE[recipe.result]) {
+        const resultItem = createItem(recipe.result, ITEM_DATABASE[recipe.result]);
+        player.inventory.push(resultItem);
+        addCombatMessage(`Crafted ${resultItem.name}!`, "info");
+      }
+      
+      // Gain skill XP
+      for (const [skill, level] of Object.entries(recipe.skill)) {
+        player.skills[skill] = Math.min(100, player.skills[skill] + 1);
+      }
+      
+      renderInventory();
+      renderCrafting();
+      renderSkills();
+      updatePlayerStats();
+    }
+
+    // Skills system
+    function renderSkills() {
+      skillsList.innerHTML = "";
+      for (const [skillName, xp] of Object.entries(player.skills)) {
+        const container = document.createElement("div");
+        container.style.marginBottom = "8px";
+
+        const label = document.createElement("div");
+        label.textContent = `${skillName}: Level ${Math.floor(xp / 10)} (${xp} XP)`;
+        label.style.fontWeight = "700";
+        label.style.fontSize = "8px";
+        container.appendChild(label);
+
+        const bar = document.createElement("div");
+        bar.classList.add("skill-bar");
+
+        const fill = document.createElement("div");
+        fill.classList.add("skill-bar-fill");
+        fill.style.width = (xp % 10) * 10 + "%";
+        fill.setAttribute("aria-valuenow", xp);
+        fill.setAttribute("aria-valuemin", 0);
+        fill.setAttribute("aria-valuemax", 100);
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-label", `${skillName} experience`);
+        bar.appendChild(fill);
+
+        container.appendChild(bar);
+        skillsList.appendChild(container);
+      }
+    }
+
+    // Update player stats UI
+    function updatePlayerStats() {
+      healthVal.textContent = Math.floor(player.stats.health) + "%";
+      hungerVal.textContent = Math.floor(player.stats.hunger) + "%";
+      thirstVal.textContent = Math.floor(player.stats.thirst) + "%";
+      fatigueVal.textContent = Math.floor(player.stats.fatigue) + "%";
+      stressVal.textContent = Math.floor(player.stats.stress) + "%";
+      boredomVal.textContent = Math.floor(player.stats.boredom) + "%";
+      weightVal.textContent = `${Math.floor(player.stats.weight)}/${player.stats.maxWeight}`;
+      
+      // Update footer stats
+      document.getElementById("footer-health").textContent = Math.floor(player.stats.health) + "%";
+      document.getElementById("footer-hunger").textContent = Math.floor(player.stats.hunger) + "%";
+      document.getElementById("footer-thirst").textContent = Math.floor(player.stats.thirst) + "%";
+      document.getElementById("footer-fatigue").textContent = Math.floor(player.stats.fatigue) + "%";
+      document.getElementById("footer-stress").textContent = Math.floor(player.stats.stress) + "%";
+    }
+
+    // Day/night cycle simulation
+    let gameTime = 360; // minutes from midnight (6:00 AM)
+    const dayLengthMinutes = 1440; // 24 hours * 60 minutes
+    const seasons = ["Spring", "Summer", "Fall", "Winter"];
+    let currentSeasonIndex = 0;
+    let seasonDay = 0;
+    const daysPerSeason = 30;
+
+    function updateTime() {
+      gameTime += 1;
+      if (gameTime >= dayLengthMinutes) {
+        gameTime = 0;
+        seasonDay++;
+        if (seasonDay >= daysPerSeason) {
+          seasonDay = 0;
+          currentSeasonIndex = (currentSeasonIndex + 1) % seasons.length;
+        }
+      }
+
+      let hours = Math.floor(gameTime / 60);
+      let minutes = gameTime % 60;
+      let ampm = hours >= 12 ? "PM" : "AM";
+      let displayHours = hours % 12;
+      if (displayHours === 0) displayHours = 12;
+      let displayMinutes = minutes.toString().padStart(2, "0");
+
+      timeDisplay.textContent = `${displayHours}:${displayMinutes} ${ampm}`;
+      seasonDisplay.textContent = seasons[currentSeasonIndex];
+
+      let progressPercent = (gameTime / dayLengthMinutes) * 100;
+      dayProgress.style.width = `${progressPercent}%`;
+    }
+
+    // Player movement with arrow keys or WASD
+    function canWalk(x, y) {
+      if (x < 0 || y < 0 || x >= MAP_COLS || y >= MAP_ROWS) return false;
+      const tile = mapData[y][x];
+      return (
+        tile !== TILE_TYPES.WATER &&
+        tile !== TILE_TYPES.BUILDING &&
+        tile !== TILE_TYPES.CONTAINER
+      );
+    }
+
+    function movePlayer(dx, dy) {
+      const newX = player.x + dx;
+      const newY = player.y + dy;
+      if (canWalk(newX, newY)) {
+        player.x = newX;
+        player.y = newY;
+        
+        // Increase fatigue slightly
+        player.stats.fatigue = Math.min(100, player.stats.fatigue + 0.1);
+        
+        renderMap();
+        updatePlayerStats();
+      }
+    }
+
+    // Enhanced zombie AI
+    function updateZombies() {
+      zombies.forEach((z) => {
+        const distanceToPlayer = Math.abs(z.x - player.x) + Math.abs(z.y - player.y);
+        
+        // State machine
+        switch (z.state) {
+          case "wandering":
+            // Check if player is within detection range
+            if (distanceToPlayer <= z.template.detection) {
+              z.state = "chasing";
+              z.lastPlayerPos = { x: player.x, y: player.y };
+              addCombatMessage(`${z.template.name} spotted you!`, "info");
+            } else {
+              // Random movement
+              const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+              const shuffled = directions.sort(() => 0.5 - Math.random());
+              for (const [dx, dy] of shuffled) {
+                const nx = z.x + dx;
+                const ny = z.y + dy;
+                if (canWalkZombie(nx, ny)) {
+                  z.x = nx;
+                  z.y = ny;
+                  break;
+                }
+              }
+            }
+            break;
+            
+          case "chasing":
+            if (distanceToPlayer <= z.template.detection) {
+              // Move towards player
+              const dx = Math.sign(player.x - z.x);
+              const dy = Math.sign(player.y - z.y);
+              
+              // Try to move towards player
+              if (Math.random() < z.template.speed) {
+                if (dx !== 0 && canWalkZombie(z.x + dx, z.y)) {
+                  z.x += dx;
+                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy)) {
+                  z.y += dy;
+                }
+              }
+              
+              // Attack if adjacent
+              if (distanceToPlayer === 1) {
+                zombieAttackPlayer(z);
+                updatePlayerStats();
+              }
+              
+              z.lastPlayerPos = { x: player.x, y: player.y };
+            } else {
+              // Lost sight, start searching
+              z.state = "searching";
+              z.searchTimer = 10;
+            }
+            break;
+            
+          case "searching":
+            // Move towards last known position
+            if (z.lastPlayerPos) {
+              const dx = Math.sign(z.lastPlayerPos.x - z.x);
+              const dy = Math.sign(z.lastPlayerPos.y - z.y);
+              
+              if (Math.random() < 0.5) {
+                if (dx !== 0 && canWalkZombie(z.x + dx, z.y)) {
+                  z.x += dx;
+                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy)) {
+                  z.y += dy;
+                }
+              }
+            }
+            
+            z.searchTimer--;
+            if (z.searchTimer <= 0) {
+              z.state = "wandering";
+              z.lastPlayerPos = null;
+            }
+            
+            // Check if player comes back into range
+            if (distanceToPlayer <= z.template.detection) {
+              z.state = "chasing";
+            }
+            break;
+        }
+      });
+      
+      renderMap();
+    }
+
+    function canWalkZombie(x, y) {
+      if (x < 0 || y < 0 || x >= MAP_COLS || y >= MAP_ROWS) return false;
+      const tile = mapData[y][x];
+      return (
+        tile !== TILE_TYPES.WATER &&
+        tile !== TILE_TYPES.BUILDING &&
+        tile !== TILE_TYPES.CONTAINER &&
+        !(x === player.x && y === player.y) &&
+        !zombies.some((other) => other.x === x && other.y === y)
+      );
+    }
+
+    // Survival mechanics
+    function updateSurvivalNeeds() {
+      // Increase hunger and thirst over time
+      player.stats.hunger = Math.min(100, player.stats.hunger + 0.02);
+      player.stats.thirst = Math.min(100, player.stats.thirst + 0.03);
+      
+      // Health effects from hunger/thirst
+      if (player.stats.hunger > 80) {
+        player.stats.health = Math.max(0, player.stats.health - 0.1);
+        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
+      }
+      if (player.stats.thirst > 80) {
+        player.stats.health = Math.max(0, player.stats.health - 0.2);
+        player.stats.stress = Math.min(100, player.stats.stress + 0.2);
+      }
+      
+      // Fatigue effects
+      if (player.stats.fatigue > 80) {
+        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
+      }
+      
+      // Stress reduction over time if low
+      if (player.stats.stress < 20) {
+        player.stats.stress = Math.max(0, player.stats.stress - 0.05);
+      }
+      
+      updatePlayerStats();
+    }
+
+    // Map interface: draw simplified map on canvas
+    function renderMapCanvas() {
+      const ctx = mapCtx;
+      const cw = mapCanvas.width;
+      const ch = mapCanvas.height;
+      ctx.clearRect(0, 0, cw, ch);
+
+      const tileW = cw / MAP_COLS;
+      const tileH = ch / MAP_ROWS;
+
+      // Draw tiles
+      for (let y = 0; y < MAP_ROWS; y++) {
+        for (let x = 0; x < MAP_COLS; x++) {
+          const tile = mapData[y][x];
+          switch (tile) {
+            case TILE_TYPES.GROUND:
+              ctx.fillStyle = "#004400";
+              break;
+            case TILE_TYPES.WATER:
+              ctx.fillStyle = "#000088";
+              break;
+            case TILE_TYPES.TREE:
+              ctx.fillStyle = "#006600";
+              break;
+            case TILE_TYPES.BUILDING:
+              ctx.fillStyle = "#884400";
+              break;
+            case TILE_TYPES.CONTAINER:
+              ctx.fillStyle = "#aaaa00";
+              break;
+            case TILE_TYPES.ROAD:
+              ctx.fillStyle = "#666666";
+              break;
+            default:
+              ctx.fillStyle = "#004400";
+          }
+          ctx.fillRect(x * tileW, y * tileH, tileW, tileH);
+        }
+      }
+
+      // Draw zombies
+      ctx.fillStyle = "#ff0000";
+      zombies.forEach((z) => {
+        ctx.fillRect(z.x * tileW, z.y * tileH, tileW, tileH);
+      });
+
+      // Draw player
+      ctx.fillStyle = "#ffff00";
+      ctx.fillRect(player.x * tileW, player.y * tileH, tileW, tileH);
+    }
+
+    // Event listeners
+    window.addEventListener("keydown", (e) => {
+      switch (e.key) {
+        case "ArrowUp":
+        case "w":
+        case "W":
+          movePlayer(0, -1);
+          break;
+        case "ArrowDown":
+        case "s":
+        case "S":
+          movePlayer(0, 1);
+          break;
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          movePlayer(-1, 0);
+          break;
+        case "ArrowRight":
+        case "d":
+        case "D":
+          movePlayer(1, 0);
+          break;
+      }
+    });
+
+    // Button event listeners
+    btnEquip.addEventListener("click", equipItem);
+    btnUse.addEventListener("click", useItem);
+    btnDrop.addEventListener("click", dropItem);
+
+    // Tooltip for inventory items
+    inventoryContainer.addEventListener("mousemove", (e) => {
+      const target = e.target.closest(".inventory-item");
+      if (!target) {
+        tooltip.style.display = "none";
+        return;
+      }
+      const index = parseInt(target.dataset.index);
+      const item = player.inventory[index];
+      if (!item) return;
+      
+      const rect = target.getBoundingClientRect();
+      tooltip.style.left = rect.left + window.scrollX + rect.width / 2 + "px";
+      tooltip.style.top = rect.top + window.scrollY - 60 + "px";
+      
+      let tooltipText = `${item.name}\n${item.description}`;
+      if (item.damage) tooltipText += `\nDamage: ${item.damage}`;
+      if (item.protection) tooltipText += `\nProtection: ${item.protection}`;
+      if (item.durability !== undefined) tooltipText += `\nDurability: ${item.durability}/${item.maxDurability}`;
+      if (item.weight) tooltipText += `\nWeight: ${item.weight}`;
+      
+      tooltip.textContent = tooltipText;
+      tooltip.style.display = "block";
+    });
+    
+    inventoryContainer.addEventListener("mouseleave", () => {
+      tooltip.style.display = "none";
+    });
+
+    // Section toggling
+    const btnInventory = document.getElementById("btn-inventory");
+    const btnCrafting = document.getElementById("btn-crafting");
+    const btnSkills = document.getElementById("btn-skills");
+    const btnMap = document.getElementById("btn-map");
+
+    const inventorySection = document.getElementById("inventory-section");
+    const craftingSection = document.getElementById("crafting-section");
+    const skillsSection = document.getElementById("skills-section");
+    const mapSection = document.getElementById("map-section");
+
+    function setActiveButton(activeBtn) {
+      [btnInventory, btnCrafting, btnSkills, btnMap].forEach((btn) => {
+        btn.setAttribute("aria-pressed", btn === activeBtn ? "true" : "false");
+      });
+    }
+
+    function showSection(section) {
+      inventorySection.style.display = "none";
+      craftingSection.style.display = "none";
+      skillsSection.style.display = "none";
+      mapSection.style.display = "none";
+
+      section.style.display = "block";
+      if (section === mapSection) {
+        renderMapCanvas();
+      }
+    }
+
+    btnInventory.addEventListener("click", () => {
+      showSection(inventorySection);
+      setActiveButton(btnInventory);
+    });
+    btnCrafting.addEventListener("click", () => {
+      showSection(craftingSection);
+      setActiveButton(btnCrafting);
+      renderCrafting();
+    });
+    btnSkills.addEventListener("click", () => {
+      showSection(skillsSection);
+      setActiveButton(btnSkills);
+    });
+    btnMap.addEventListener("click", () => {
+      showSection(mapSection);
+      setActiveButton(btnMap);
+    });
+
+    // Initialize game
+    function init() {
+      generateMap();
+      renderMap();
+      renderInventory();
+      renderCrafting();
+      renderSkills();
+      updatePlayerStats();
+      updateEquipmentDisplay();
+      updateTime();
+      
+      // Add some starting items
+      const startingItems = ["kitchen_knife", "bandage", "canned_beans", "water_bottle"];
+      startingItems.forEach(itemId => {
+        if (ITEM_DATABASE[itemId]) {
+          const item = createItem(itemId, ITEM_DATABASE[itemId]);
+          player.inventory.push(item);
+          player.stats.weight += item.weight || 0;
+        }
+      });
+      renderInventory();
+      
+      addCombatMessage("Welcome to the zombie apocalypse! Use WASD or arrow keys to move.", "info");
+      addCombatMessage("Click on zombies to attack them when adjacent.", "info");
+      addCombatMessage("Search containers for loot and craft items to survive.", "info");
+    }
+
+    // Update loop for zombies, time, and survival needs
+    setInterval(() => {
+      updateZombies();
+      updateTime();
+      updateSurvivalNeeds();
+    }, 2000);
+
+    // Initialize the game
+    init();
+  </script>
+</body>
+</html>

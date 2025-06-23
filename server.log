@@ -1,0 +1,22 @@
+127.0.0.1 - - [23/Jun/2025 18:34:12] "HEAD / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:34:25] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:34:27] code 404, message File not found
+127.0.0.1 - - [23/Jun/2025 18:34:27] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [23/Jun/2025 18:34:30] "GET /zombie_survival_game.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:34:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:34:40] "GET /zombie_survival_game.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:37:29] "HEAD /zombie_survival_game.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:37:38] "GET /zombie_survival_game.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:38:04] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:38:17] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:03] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:03] "GET /.bash_logout HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:03] "GET /.bashrc HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:04] "GET /.cache/ HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:04] "GET /.ipython/ HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:05] "GET /.jupyter/ HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:05] "GET /.local/ HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:05] "GET /.pki/ HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:06] "GET /.profile HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:06] "GET /.sudo_as_admin_successful HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jun/2025 18:39:06] "GET /_last_execution_output.json HTTP/1.1" 200 -
