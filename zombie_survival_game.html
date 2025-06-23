@@ -534,6 +534,9 @@
     const TILE_WIDTH = 32;
     const TILE_HEIGHT = 16;
     const RENDER_DISTANCE = 2; // chunks around player
+    const PRELOAD_DISTANCE = 3; // chunks to preload ahead
+    const MAX_LOADED_CHUNKS = 25; // maximum chunks to keep in memory
+    const EDGE_THRESHOLD = 8; // tiles from chunk edge to trigger preloading
 
     // Tile types
     const TILE_TYPES = {
@@ -872,6 +875,8 @@
 
     // Map data and game state - infinite map system
     let worldChunks = new Map(); // Map of chunk coordinates to chunk data
+    const chunkLoadQueue = []; // Queue for background chunk loading
+    const chunkAccessTimes = new Map(); // For LRU cache management
     let containers = {};
     let doors = {}; // Door states by position
     let windows = {}; // Window states by position
@@ -883,6 +888,7 @@
     let combatLog = [];
     let viewportOffsetX = 0;
     let viewportOffsetY = 0;
+    let lastPlayerChunk = { x: 0, y: 0 }; // Track chunk transitions
 
     // HTML elements
     const isoMap = document.getElementById("iso-map");
@@ -965,9 +971,20 @@
 
     function getChunk(chunkX, chunkY) {
       const key = getChunkKey(chunkX, chunkY);
+      
+      // Update access time for LRU cache
+      chunkAccessTimes.set(key, Date.now());
+      
       if (!worldChunks.has(key)) {
+        // Check if we need to unload old chunks
+        if (worldChunks.size >= MAX_LOADED_CHUNKS) {
+          unloadOldestChunk();
+        }
+        
         worldChunks.set(key, generateChunk(chunkX, chunkY));
+        addCombatMessage(`Exploring new territory... (${chunkX}, ${chunkY})`, "info");
       }
+      
       return worldChunks.get(key);
     }
 
@@ -1001,6 +1018,113 @@
         }
       }
       chunk.floors[floor][localY][localX] = tileType;
+    }
+
+    // Enhanced chunk management functions
+    function unloadOldestChunk() {
+      if (chunkAccessTimes.size === 0) return;
+      
+      // Find the oldest accessed chunk
+      let oldestKey = null;
+      let oldestTime = Date.now();
+      
+      for (const [key, time] of chunkAccessTimes.entries()) {
+        if (time < oldestTime) {
+          oldestTime = time;
+          oldestKey = key;
+        }
+      }
+      
+      if (oldestKey && worldChunks.has(oldestKey)) {
+        // Don't unload chunks too close to player
+        const [chunkX, chunkY] = oldestKey.split(',').map(Number);
+        const distanceToPlayer = Math.max(
+          Math.abs(chunkX - player.chunkX),
+          Math.abs(chunkY - player.chunkY)
+        );
+        
+        if (distanceToPlayer > RENDER_DISTANCE + 1) {
+          worldChunks.delete(oldestKey);
+          chunkAccessTimes.delete(oldestKey);
+        }
+      }
+    }
+
+    function isNearChunkEdge(x, y) {
+      const localX = x % CHUNK_SIZE;
+      const localY = y % CHUNK_SIZE;
+      
+      return (
+        localX < EDGE_THRESHOLD || 
+        localX >= CHUNK_SIZE - EDGE_THRESHOLD ||
+        localY < EDGE_THRESHOLD || 
+        localY >= CHUNK_SIZE - EDGE_THRESHOLD
+      );
+    }
+
+    function getPlayerMovementDirection(oldX, oldY, newX, newY) {
+      const dx = newX - oldX;
+      const dy = newY - oldY;
+      
+      return {
+        x: dx > 0 ? 1 : dx < 0 ? -1 : 0,
+        y: dy > 0 ? 1 : dy < 0 ? -1 : 0
+      };
+    }
+
+    function preloadChunksInDirection(directionX, directionY) {
+      const centerChunkX = player.chunkX;
+      const centerChunkY = player.chunkY;
+      
+      // Preload chunks in movement direction
+      for (let dy = -PRELOAD_DISTANCE; dy <= PRELOAD_DISTANCE; dy++) {
+        for (let dx = -PRELOAD_DISTANCE; dx <= PRELOAD_DISTANCE; dx++) {
+          const chunkX = centerChunkX + dx + (directionX * 2);
+          const chunkY = centerChunkY + dy + (directionY * 2);
+          
+          const key = getChunkKey(chunkX, chunkY);
+          if (!worldChunks.has(key) && !chunkLoadQueue.includes(key)) {
+            chunkLoadQueue.push(key);
+          }
+        }
+      }
+    }
+
+    function processChunkLoadQueue() {
+      if (chunkLoadQueue.length > 0) {
+        const key = chunkLoadQueue.shift();
+        const [chunkX, chunkY] = key.split(',').map(Number);
+        
+        // Only load if still needed (player hasn't moved too far)
+        const distance = Math.max(
+          Math.abs(chunkX - player.chunkX),
+          Math.abs(chunkY - player.chunkY)
+        );
+        
+        if (distance <= PRELOAD_DISTANCE + 1) {
+          getChunk(chunkX, chunkY);
+        }
+      }
+    }
+
+    function checkChunkTransition() {
+      const currentChunk = { x: player.chunkX, y: player.chunkY };
+      
+      if (currentChunk.x !== lastPlayerChunk.x || currentChunk.y !== lastPlayerChunk.y) {
+        const direction = getPlayerMovementDirection(
+          lastPlayerChunk.x, lastPlayerChunk.y,
+          currentChunk.x, currentChunk.y
+        );
+        
+        // Preload chunks in movement direction
+        preloadChunksInDirection(direction.x, direction.y);
+        
+        // Update last known chunk
+        lastPlayerChunk = { ...currentChunk };
+        
+        // Add transition message
+        addCombatMessage(`Entering new area... (Chunk ${currentChunk.x}, ${currentChunk.y})`, "info");
+      }
     }
 
     // Enhanced chunk generation with multi-story buildings
@@ -2347,6 +2471,12 @@
         return;
       }
 
+      // Store old position for movement direction calculation
+      const oldX = player.x;
+      const oldY = player.y;
+      const oldChunkX = player.chunkX;
+      const oldChunkY = player.chunkY;
+      
       // Move player
       player.x = newX;
       player.y = newY;
@@ -2354,6 +2484,15 @@
       // Update chunk coordinates
       player.chunkX = Math.floor(player.x / CHUNK_SIZE);
       player.chunkY = Math.floor(player.y / CHUNK_SIZE);
+      
+      // Check for chunk transitions and preload
+      checkChunkTransition();
+      
+      // Check if near chunk edge and preload in movement direction
+      if (isNearChunkEdge(player.x, player.y)) {
+        const direction = getPlayerMovementDirection(oldX, oldY, player.x, player.y);
+        preloadChunksInDirection(direction.x, direction.y);
+      }
       
       // Load new chunks if needed
       loadNearbyChunks();
@@ -2614,8 +2753,8 @@
         // Don't spawn on water or walls
         const tileType = getTileAt(x, y, player.floor);
         if (tileType !== TILE_TYPES.WATER && tileType !== TILE_TYPES.WALL) {
-          const zombieType = Math.random() < 0.7 ? "walker" : "runner";
-          const template = ZOMBIE_TEMPLATES[zombieType];
+          const zombieType = Math.random() < 0.7 ? "shambler" : "runner";
+          const template = ZOMBIE_TYPES[zombieType];
           
           const zombie = {
             x: x,
@@ -2643,6 +2782,9 @@
       player.floor = 0;
       player.chunkX = 0;
       player.chunkY = 0;
+      
+      // Initialize chunk tracking
+      lastPlayerChunk = { x: player.chunkX, y: player.chunkY };
       
       // Load initial chunks around player
       loadNearbyChunks();
@@ -2686,7 +2828,13 @@
       updateZombies();
       updateTime();
       updateSurvivalNeeds();
+      processChunkLoadQueue(); // Process background chunk loading
     }, 2000);
+
+    // Faster chunk processing loop for smoother experience
+    setInterval(() => {
+      processChunkLoadQueue();
+    }, 500);
 
     // Initialize the game
     init();
