@@ -73,11 +73,18 @@
       color: #ff0;
     }
     .iso-tile.player {
-      color: #ff0;
-      font-weight: 900;
-      text-shadow: 0 0 2px #ff0, 0 0 5px #ff0;
+      color: #ff0 !important;
+      font-weight: 900 !important;
+      text-shadow: 0 0 2px #ff0, 0 0 5px #ff0, 0 0 8px #ff0 !important;
       cursor: pointer;
       z-index: 2000 !important;
+      position: absolute !important;
+      font-size: 18px !important;
+      line-height: 16px !important;
+      transform: none !important;
+      background-color: rgba(255, 255, 0, 0.3) !important;
+      border: 1px solid #ff0 !important;
+      border-radius: 2px !important;
     }
     .iso-tile.zombie {
       color: #f00;
@@ -1218,7 +1225,9 @@
       playerDiv.classList.add("iso-tile", "player");
       playerDiv.style.left = player.x * TILE_WIDTH + "px";
       playerDiv.style.top = player.y * TILE_HEIGHT + "px";
-      playerDiv.textContent = "@";
+      playerDiv.style.position = "absolute";
+      playerDiv.style.zIndex = "2000";
+      playerDiv.textContent = "♦";
       playerDiv.setAttribute("aria-label", "Player character");
       isoMap.appendChild(playerDiv);
     }
