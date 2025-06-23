@@ -527,11 +527,13 @@
   <div id="tooltip" class="tooltip" style="display:none;"></div>
   
   <script>
-    // Constants for map size
-    const MAP_COLS = 20;
-    const MAP_ROWS = 20;
+    // Constants for map system
+    const CHUNK_SIZE = 32;
+    const VIEWPORT_WIDTH = 20;
+    const VIEWPORT_HEIGHT = 20;
     const TILE_WIDTH = 32;
     const TILE_HEIGHT = 16;
+    const RENDER_DISTANCE = 2; // chunks around player
 
     // Tile types
     const TILE_TYPES = {
@@ -541,6 +543,34 @@
       BUILDING: "#",
       CONTAINER: "C",
       ROAD: "=",
+      WALL: "W",
+      DOOR: "D",
+      WINDOW: "w",
+      FLOOR: "f",
+      STAIRS_UP: "^",
+      STAIRS_DOWN: "v"
+    };
+
+    // Door and window states
+    const DOOR_STATES = {
+      OPEN: "open",
+      CLOSED: "closed",
+      LOCKED: "locked",
+      BARRICADED: "barricaded"
+    };
+
+    const WINDOW_STATES = {
+      INTACT: "intact",
+      BROKEN: "broken",
+      BARRICADED: "barricaded"
+    };
+
+    // Building types for generation
+    const BUILDING_TYPES = {
+      HOUSE: "house",
+      APARTMENT: "apartment",
+      SHOP: "shop",
+      WAREHOUSE: "warehouse"
     };
 
     // Item categories and types
@@ -751,6 +781,36 @@
         stackable: true,
         maxStack: 50,
         description: "Metal nails for construction"
+      },
+      "sheet_metal": {
+        name: "Sheet Metal",
+        category: ITEM_CATEGORIES.MATERIAL,
+        char: "🔲",
+        weight: 5,
+        rarity: "uncommon",
+        stackable: true,
+        maxStack: 5,
+        description: "Metal sheeting for barricades"
+      },
+      "rope": {
+        name: "Rope",
+        category: ITEM_CATEGORIES.MATERIAL,
+        char: "🪢",
+        weight: 1,
+        rarity: "common",
+        stackable: true,
+        maxStack: 10,
+        description: "Strong rope for securing barricades"
+      },
+      "barbed_wire": {
+        name: "Barbed Wire",
+        category: ITEM_CATEGORIES.MATERIAL,
+        char: "⚡",
+        weight: 2,
+        rarity: "rare",
+        stackable: true,
+        maxStack: 5,
+        description: "Dangerous wire for reinforcing barricades"
       }
     };
 
@@ -758,6 +818,9 @@
     const player = {
       x: 10,
       y: 10,
+      floor: 0, // Current floor level (0 = ground floor)
+      chunkX: 0, // Current chunk coordinates
+      chunkY: 0,
       inventory: [],
       equipped: {
         weapon: null,
@@ -807,13 +870,19 @@
       }
     };
 
-    // Map data and game state
-    let mapData = [];
+    // Map data and game state - infinite map system
+    let worldChunks = new Map(); // Map of chunk coordinates to chunk data
     let containers = {};
+    let doors = {}; // Door states by position
+    let windows = {}; // Window states by position
+    let barricades = {}; // Barricade data by position
+    let buildings = {}; // Building data with multi-story info
     let zombies = [];
     let deadZombies = [];
     let selectedInventoryItem = null;
     let combatLog = [];
+    let viewportOffsetX = 0;
+    let viewportOffsetY = 0;
 
     // HTML elements
     const isoMap = document.getElementById("iso-map");
@@ -889,134 +958,374 @@
       return item;
     }
 
-    // Enhanced map generation
-    function generateMap() {
-      mapData = [];
-      containers = {};
-      zombies = [];
-      deadZombies = [];
+    // Chunk management functions
+    function getChunkKey(chunkX, chunkY) {
+      return `${chunkX},${chunkY}`;
+    }
 
-      // Initialize all tiles as ground
-      for (let y = 0; y < MAP_ROWS; y++) {
-        const row = [];
-        for (let x = 0; x < MAP_COLS; x++) {
-          row.push(TILE_TYPES.GROUND);
+    function getChunk(chunkX, chunkY) {
+      const key = getChunkKey(chunkX, chunkY);
+      if (!worldChunks.has(key)) {
+        worldChunks.set(key, generateChunk(chunkX, chunkY));
+      }
+      return worldChunks.get(key);
+    }
+
+    function getTileAt(worldX, worldY, floor = 0) {
+      const chunkX = Math.floor(worldX / CHUNK_SIZE);
+      const chunkY = Math.floor(worldY / CHUNK_SIZE);
+      const localX = worldX - chunkX * CHUNK_SIZE;
+      const localY = worldY - chunkY * CHUNK_SIZE;
+      
+      const chunk = getChunk(chunkX, chunkY);
+      if (chunk.floors[floor]) {
+        return chunk.floors[floor][localY] ? chunk.floors[floor][localY][localX] : TILE_TYPES.GROUND;
+      }
+      return TILE_TYPES.GROUND;
+    }
+
+    function setTileAt(worldX, worldY, tileType, floor = 0) {
+      const chunkX = Math.floor(worldX / CHUNK_SIZE);
+      const chunkY = Math.floor(worldY / CHUNK_SIZE);
+      const localX = worldX - chunkX * CHUNK_SIZE;
+      const localY = worldY - chunkY * CHUNK_SIZE;
+      
+      const chunk = getChunk(chunkX, chunkY);
+      if (!chunk.floors[floor]) {
+        chunk.floors[floor] = [];
+        for (let y = 0; y < CHUNK_SIZE; y++) {
+          chunk.floors[floor][y] = [];
+          for (let x = 0; x < CHUNK_SIZE; x++) {
+            chunk.floors[floor][y][x] = TILE_TYPES.GROUND;
+          }
         }
-        mapData.push(row);
+      }
+      chunk.floors[floor][localY][localX] = tileType;
+    }
+
+    // Enhanced chunk generation with multi-story buildings
+    function generateChunk(chunkX, chunkY) {
+      const chunk = {
+        x: chunkX,
+        y: chunkY,
+        floors: {}
+      };
+
+      // Initialize ground floor
+      chunk.floors[0] = [];
+      for (let y = 0; y < CHUNK_SIZE; y++) {
+        chunk.floors[0][y] = [];
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+          chunk.floors[0][y][x] = TILE_TYPES.GROUND;
+        }
       }
 
+      // Generate terrain features
+      generateTerrain(chunk, chunkX, chunkY);
+      
+      // Generate buildings
+      generateBuildings(chunk, chunkX, chunkY);
+      
+      // Generate roads
+      generateRoads(chunk, chunkX, chunkY);
+
+      return chunk;
+    }
+
+    function generateTerrain(chunk, chunkX, chunkY) {
+      // Use chunk coordinates as seed for consistent generation
+      const seed = chunkX * 1000 + chunkY;
+      
       // Add water bodies
-      for (let i = 0; i < 3; i++) {
-        const lakeX = Math.floor(Math.random() * (MAP_COLS - 5));
-        const lakeY = Math.floor(Math.random() * (MAP_ROWS - 5));
-        for (let y = lakeY; y < lakeY + 3; y++) {
-          for (let x = lakeX; x < lakeX + 5; x++) {
-            if (x < MAP_COLS && y < MAP_ROWS) {
-              mapData[y][x] = TILE_TYPES.WATER;
+      if (Math.abs(chunkX % 5) === 0 && Math.abs(chunkY % 5) === 0) {
+        const lakeSize = 8 + Math.floor(Math.random() * 6);
+        const lakeX = Math.floor(Math.random() * (CHUNK_SIZE - lakeSize));
+        const lakeY = Math.floor(Math.random() * (CHUNK_SIZE - lakeSize));
+        
+        for (let y = lakeY; y < lakeY + lakeSize; y++) {
+          for (let x = lakeX; x < lakeX + lakeSize; x++) {
+            if (x < CHUNK_SIZE && y < CHUNK_SIZE) {
+              chunk.floors[0][y][x] = TILE_TYPES.WATER;
             }
           }
         }
       }
 
       // Add trees
-      for (let i = 0; i < 50; i++) {
-        const tx = Math.floor(Math.random() * MAP_COLS);
-        const ty = Math.floor(Math.random() * MAP_ROWS);
-        if (mapData[ty][tx] === TILE_TYPES.GROUND) {
-          mapData[ty][tx] = TILE_TYPES.TREE;
+      const treeCount = 20 + Math.floor(Math.random() * 30);
+      for (let i = 0; i < treeCount; i++) {
+        const tx = Math.floor(Math.random() * CHUNK_SIZE);
+        const ty = Math.floor(Math.random() * CHUNK_SIZE);
+        if (chunk.floors[0][ty][tx] === TILE_TYPES.GROUND) {
+          chunk.floors[0][ty][tx] = TILE_TYPES.TREE;
+        }
+      }
+    }
+
+    function generateBuildings(chunk, chunkX, chunkY) {
+      const buildingCount = 2 + Math.floor(Math.random() * 4);
+      
+      for (let i = 0; i < buildingCount; i++) {
+        const buildingType = Object.values(BUILDING_TYPES)[Math.floor(Math.random() * Object.values(BUILDING_TYPES).length)];
+        generateBuilding(chunk, chunkX, chunkY, buildingType);
+      }
+    }
+
+    function generateBuilding(chunk, chunkX, chunkY, buildingType) {
+      let width, height, floors;
+      
+      switch (buildingType) {
+        case BUILDING_TYPES.HOUSE:
+          width = 6 + Math.floor(Math.random() * 4);
+          height = 6 + Math.floor(Math.random() * 4);
+          floors = 1 + Math.floor(Math.random() * 2); // 1-2 floors
+          break;
+        case BUILDING_TYPES.APARTMENT:
+          width = 8 + Math.floor(Math.random() * 6);
+          height = 8 + Math.floor(Math.random() * 6);
+          floors = 2 + Math.floor(Math.random() * 3); // 2-4 floors
+          break;
+        case BUILDING_TYPES.SHOP:
+          width = 10 + Math.floor(Math.random() * 8);
+          height = 6 + Math.floor(Math.random() * 4);
+          floors = 1 + Math.floor(Math.random() * 2); // 1-2 floors
+          break;
+        case BUILDING_TYPES.WAREHOUSE:
+          width = 12 + Math.floor(Math.random() * 8);
+          height = 12 + Math.floor(Math.random() * 8);
+          floors = 1; // Single floor
+          break;
+        default:
+          width = 6;
+          height = 6;
+          floors = 1;
+      }
+
+      const startX = Math.floor(Math.random() * (CHUNK_SIZE - width - 2)) + 1;
+      const startY = Math.floor(Math.random() * (CHUNK_SIZE - height - 2)) + 1;
+
+      // Check if we can place the building
+      let canPlace = true;
+      for (let y = startY; y < startY + height; y++) {
+        for (let x = startX; x < startX + width; x++) {
+          if (chunk.floors[0][y][x] !== TILE_TYPES.GROUND) {
+            canPlace = false;
+            break;
+          }
+        }
+        if (!canPlace) break;
+      }
+      
+      if (!canPlace) return;
+
+      // Generate building structure for each floor
+      const buildingId = `${chunkX}_${chunkY}_${startX}_${startY}`;
+      buildings[buildingId] = {
+        type: buildingType,
+        x: startX,
+        y: startY,
+        width: width,
+        height: height,
+        floors: floors,
+        chunkX: chunkX,
+        chunkY: chunkY
+      };
+
+      for (let floor = 0; floor < floors; floor++) {
+        generateBuildingFloor(chunk, startX, startY, width, height, floor, buildingType, buildingId);
+      }
+    }
+
+    function generateBuildingFloor(chunk, startX, startY, width, height, floor, buildingType, buildingId) {
+      // Initialize floor if it doesn't exist
+      if (!chunk.floors[floor]) {
+        chunk.floors[floor] = [];
+        for (let y = 0; y < CHUNK_SIZE; y++) {
+          chunk.floors[floor][y] = [];
+          for (let x = 0; x < CHUNK_SIZE; x++) {
+            chunk.floors[floor][y][x] = TILE_TYPES.GROUND;
+          }
         }
       }
 
-      // Generate buildings with enhanced loot
-      const houseCount = 8;
-      for (let i = 0; i < houseCount; i++) {
-        const houseWidth = 3 + Math.floor(Math.random() * 3);
-        const houseHeight = 3 + Math.floor(Math.random() * 2);
-        const startX = Math.floor(Math.random() * (MAP_COLS - houseWidth));
-        const startY = Math.floor(Math.random() * (MAP_ROWS - houseHeight));
-
-        let canPlace = true;
-        for (let y = startY; y < startY + houseHeight; y++) {
-          for (let x = startX; x < startX + houseWidth; x++) {
-            if (
-              x >= MAP_COLS ||
-              y >= MAP_ROWS ||
-              mapData[y][x] !== TILE_TYPES.GROUND
-            ) {
-              canPlace = false;
-              break;
-            }
-          }
-          if (!canPlace) break;
-        }
-        if (!canPlace) continue;
-
-        // Place building tiles
-        for (let y = startY; y < startY + houseHeight; y++) {
-          for (let x = startX; x < startX + houseWidth; x++) {
-            mapData[y][x] = TILE_TYPES.BUILDING;
+      // Generate walls
+      for (let y = startY; y < startY + height; y++) {
+        for (let x = startX; x < startX + width; x++) {
+          if (x === startX || x === startX + width - 1 || y === startY || y === startY + height - 1) {
+            chunk.floors[floor][y][x] = TILE_TYPES.WALL;
+          } else {
+            chunk.floors[floor][y][x] = TILE_TYPES.FLOOR;
           }
         }
+      }
 
-        // Place containers with enhanced loot
-        const containerCount = 1 + Math.floor(Math.random() * 2);
-        for (let c = 0; c < containerCount; c++) {
-          let cx, cy;
-          let tries = 0;
-          do {
-            cx = startX + 1 + Math.floor(Math.random() * (houseWidth - 2));
-            cy = startY + 1 + Math.floor(Math.random() * (houseHeight - 2));
-            tries++;
-          } while (
-            (mapData[cy][cx] !== TILE_TYPES.BUILDING || containers[`${cx},${cy}`]) &&
-            tries < 10
-          );
-          if (tries >= 10) continue;
+      // Add doors and windows
+      addDoorsAndWindows(chunk, startX, startY, width, height, floor, buildingId);
+      
+      // Add stairs for multi-story buildings
+      if (floor < buildings[buildingId].floors - 1) {
+        addStairs(chunk, startX, startY, width, height, floor, true); // stairs up
+      }
+      if (floor > 0) {
+        addStairs(chunk, startX, startY, width, height, floor, false); // stairs down
+      }
+
+      // Add containers and furniture
+      addBuildingContents(chunk, startX, startY, width, height, floor, buildingType);
+    }
+
+    function addDoorsAndWindows(chunk, startX, startY, width, height, floor, buildingId) {
+      // Add main door (ground floor only)
+      if (floor === 0) {
+        const doorX = startX + Math.floor(width / 2);
+        const doorY = startY + height - 1;
+        chunk.floors[floor][doorY][doorX] = TILE_TYPES.DOOR;
+        
+        const doorKey = `${doorX},${doorY},${floor}`;
+        doors[doorKey] = {
+          state: DOOR_STATES.CLOSED,
+          buildingId: buildingId,
+          x: doorX,
+          y: doorY,
+          floor: floor
+        };
+      }
+
+      // Add windows
+      const windowCount = Math.floor((width + height) / 3);
+      for (let i = 0; i < windowCount; i++) {
+        let windowX, windowY;
+        
+        if (Math.random() < 0.5) {
+          // Side walls
+          windowX = Math.random() < 0.5 ? startX : startX + width - 1;
+          windowY = startY + 1 + Math.floor(Math.random() * (height - 2));
+        } else {
+          // Top/bottom walls
+          windowX = startX + 1 + Math.floor(Math.random() * (width - 2));
+          windowY = Math.random() < 0.5 ? startY : startY + height - 1;
+        }
+
+        if (chunk.floors[floor][windowY][windowX] === TILE_TYPES.WALL) {
+          chunk.floors[floor][windowY][windowX] = TILE_TYPES.WINDOW;
           
-          mapData[cy][cx] = TILE_TYPES.CONTAINER;
-          containers[`${cx},${cy}`] = generateLoot();
+          const windowKey = `${windowX},${windowY},${floor}`;
+          windows[windowKey] = {
+            state: WINDOW_STATES.INTACT,
+            buildingId: buildingId,
+            x: windowX,
+            y: windowY,
+            floor: floor
+          };
         }
       }
+    }
 
-      // Generate roads
-      const roadY = Math.floor(MAP_ROWS / 2);
-      for (let x = 0; x < MAP_COLS; x++) {
-        if (mapData[roadY][x] === TILE_TYPES.GROUND) {
-          mapData[roadY][x] = TILE_TYPES.ROAD;
-        }
+    function addStairs(chunk, startX, startY, width, height, floor, isUp) {
+      const stairX = startX + 1;
+      const stairY = startY + 1;
+      
+      if (chunk.floors[floor][stairY][stairX] === TILE_TYPES.FLOOR) {
+        chunk.floors[floor][stairY][stairX] = isUp ? TILE_TYPES.STAIRS_UP : TILE_TYPES.STAIRS_DOWN;
       }
-      const roadX = Math.floor(MAP_COLS / 2);
-      for (let y = 0; y < MAP_ROWS; y++) {
-        if (mapData[y][roadX] === TILE_TYPES.GROUND) {
-          mapData[y][roadX] = TILE_TYPES.ROAD;
-        }
-      }
+    }
 
-      // Generate diverse zombie types
-      const zombieCount = 8 + Math.floor(Math.random() * 5);
+    function addBuildingContents(chunk, startX, startY, width, height, floor, buildingType) {
+      // Add containers with loot
+      const containerCount = Math.floor((width * height) / 20) + 1;
+      
+      for (let i = 0; i < containerCount; i++) {
+        let cx, cy;
+        let tries = 0;
+        
+        do {
+          cx = startX + 1 + Math.floor(Math.random() * (width - 2));
+          cy = startY + 1 + Math.floor(Math.random() * (height - 2));
+          tries++;
+        } while (
+          (chunk.floors[floor][cy][cx] !== TILE_TYPES.FLOOR || containers[`${cx},${cy},${floor}`]) &&
+          tries < 10
+        );
+        
+        if (tries >= 10) continue;
+        
+        chunk.floors[floor][cy][cx] = TILE_TYPES.CONTAINER;
+        containers[`${cx},${cy},${floor}`] = generateLoot();
+      }
+    }
+
+    function generateRoads(chunk, chunkX, chunkY) {
+      // Generate main roads every few chunks
+      if (chunkX % 3 === 0) {
+        const roadX = CHUNK_SIZE / 2;
+        for (let y = 0; y < CHUNK_SIZE; y++) {
+          if (chunk.floors[0][y][roadX] === TILE_TYPES.GROUND) {
+            chunk.floors[0][y][roadX] = TILE_TYPES.ROAD;
+          }
+        }
+      }
+      
+      if (chunkY % 3 === 0) {
+        const roadY = CHUNK_SIZE / 2;
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+          if (chunk.floors[0][roadY][x] === TILE_TYPES.GROUND) {
+            chunk.floors[0][roadY][x] = TILE_TYPES.ROAD;
+          }
+        }
+      }
+    }
+
+    // Initialize world generation
+    function generateMap() {
+      // Clear existing data
+      worldChunks.clear();
+      containers = {};
+      doors = {};
+      windows = {};
+      barricades = {};
+      buildings = {};
       zombies = [];
+      deadZombies = [];
+
+      // Generate initial chunks around player
+      for (let chunkY = -RENDER_DISTANCE; chunkY <= RENDER_DISTANCE; chunkY++) {
+        for (let chunkX = -RENDER_DISTANCE; chunkX <= RENDER_DISTANCE; chunkX++) {
+          getChunk(chunkX, chunkY);
+        }
+      }
+
+      // Generate initial zombies
+      generateZombies();
+    }
+
+    function generateZombies() {
+      const zombieCount = 15 + Math.floor(Math.random() * 10);
+      zombies = [];
+      
       for (let i = 0; i < zombieCount; i++) {
         let zx, zy;
         let tries = 0;
+        
         do {
-          zx = Math.floor(Math.random() * MAP_COLS);
-          zy = Math.floor(Math.random() * MAP_ROWS);
+          zx = player.x + (Math.random() - 0.5) * 100;
+          zy = player.y + (Math.random() - 0.5) * 100;
           tries++;
         } while (
-          (mapData[zy][zx] === TILE_TYPES.WATER ||
-            mapData[zy][zx] === TILE_TYPES.BUILDING ||
-            mapData[zy][zx] === TILE_TYPES.CONTAINER) &&
-          tries < 20
+          (getTileAt(Math.floor(zx), Math.floor(zy), player.floor) === TILE_TYPES.WATER ||
+           getTileAt(Math.floor(zx), Math.floor(zy), player.floor) === TILE_TYPES.WALL) &&
+          tries < 50
         );
-        if (tries >= 20) continue;
+        
+        if (tries >= 50) continue;
         
         const typeKeys = Object.keys(ZOMBIE_TYPES);
         const zombieType = typeKeys[Math.floor(Math.random() * typeKeys.length)];
         const template = ZOMBIE_TYPES[zombieType];
         
         zombies.push({
-          x: zx,
-          y: zy,
+          x: Math.floor(zx),
+          y: Math.floor(zy),
+          floor: player.floor,
           type: zombieType,
           state: "wandering",
           health: template.health,
@@ -1027,6 +1336,165 @@
           template: template
         });
       }
+    }
+
+    // Door and window interaction system
+    function interactWithDoor(x, y, floor) {
+      const doorKey = `${x},${y},${floor}`;
+      const door = doors[doorKey];
+      
+      if (!door) return false;
+      
+      switch (door.state) {
+        case DOOR_STATES.OPEN:
+          door.state = DOOR_STATES.CLOSED;
+          addCombatMessage("You close the door.", "info");
+          break;
+        case DOOR_STATES.CLOSED:
+          door.state = DOOR_STATES.OPEN;
+          addCombatMessage("You open the door.", "info");
+          break;
+        case DOOR_STATES.LOCKED:
+          addCombatMessage("The door is locked.", "info");
+          break;
+        case DOOR_STATES.BARRICADED:
+          addCombatMessage("The door is barricaded.", "info");
+          break;
+      }
+      return true;
+    }
+
+    function interactWithWindow(x, y, floor) {
+      const windowKey = `${x},${y},${floor}`;
+      const window = windows[windowKey];
+      
+      if (!window) return false;
+      
+      switch (window.state) {
+        case WINDOW_STATES.INTACT:
+          window.state = WINDOW_STATES.BROKEN;
+          addCombatMessage("You break the window.", "info");
+          break;
+        case WINDOW_STATES.BROKEN:
+          addCombatMessage("The window is already broken.", "info");
+          break;
+        case WINDOW_STATES.BARRICADED:
+          addCombatMessage("The window is barricaded.", "info");
+          break;
+      }
+      return true;
+    }
+
+    function canBarricade(x, y, floor) {
+      const doorKey = `${x},${y},${floor}`;
+      const windowKey = `${x},${y},${floor}`;
+      
+      return (doors[doorKey] && doors[doorKey].state !== DOOR_STATES.BARRICADED) ||
+             (windows[windowKey] && windows[windowKey].state !== WINDOW_STATES.BARRICADED);
+    }
+
+    function barricadePosition(x, y, floor) {
+      const doorKey = `${x},${y},${floor}`;
+      const windowKey = `${x},${y},${floor}`;
+      const barricadeKey = `${x},${y},${floor}`;
+      
+      // Check if player has required materials
+      const requiredMaterials = [
+        { item: "wood_plank", quantity: 2 },
+        { item: "nails", quantity: 5 }
+      ];
+      
+      let canBarricadeFlag = true;
+      for (const req of requiredMaterials) {
+        const playerItem = player.inventory.find(item => item.id === req.item);
+        if (!playerItem || playerItem.quantity < req.quantity) {
+          canBarricadeFlag = false;
+          addCombatMessage(`You need ${req.quantity} ${ITEM_DATABASE[req.item].name} to barricade.`, "info");
+          break;
+        }
+      }
+      
+      if (!canBarricadeFlag) return false;
+      
+      // Check if player has hammer
+      const hasHammer = player.inventory.some(item => item.id === "hammer");
+      if (!hasHammer) {
+        addCombatMessage("You need a hammer to barricade.", "info");
+        return false;
+      }
+      
+      // Consume materials
+      for (const req of requiredMaterials) {
+        const playerItem = player.inventory.find(item => item.id === req.item);
+        playerItem.quantity -= req.quantity;
+        if (playerItem.quantity <= 0) {
+          const index = player.inventory.indexOf(playerItem);
+          player.inventory.splice(index, 1);
+        }
+      }
+      
+      // Create barricade
+      if (doors[doorKey]) {
+        doors[doorKey].state = DOOR_STATES.BARRICADED;
+        addCombatMessage("You barricade the door.", "info");
+      } else if (windows[windowKey]) {
+        windows[windowKey].state = WINDOW_STATES.BARRICADED;
+        addCombatMessage("You barricade the window.", "info");
+      }
+      
+      barricades[barricadeKey] = {
+        strength: 100,
+        maxStrength: 100,
+        x: x,
+        y: y,
+        floor: floor
+      };
+      
+      // Gain carpentry XP
+      player.skills.carpentry = Math.min(100, player.skills.carpentry + 3);
+      
+      renderInventory();
+      return true;
+    }
+
+    function removeBarricade(x, y, floor) {
+      const doorKey = `${x},${y},${floor}`;
+      const windowKey = `${x},${y},${floor}`;
+      const barricadeKey = `${x},${y},${floor}`;
+      
+      if (!barricades[barricadeKey]) return false;
+      
+      // Check if player has crowbar
+      const hasCrowbar = player.inventory.some(item => item.id === "crowbar");
+      if (!hasCrowbar) {
+        addCombatMessage("You need a crowbar to remove barricades.", "info");
+        return false;
+      }
+      
+      delete barricades[barricadeKey];
+      
+      if (doors[doorKey]) {
+        doors[doorKey].state = DOOR_STATES.CLOSED;
+        addCombatMessage("You remove the door barricade.", "info");
+      } else if (windows[windowKey]) {
+        windows[windowKey].state = WINDOW_STATES.BROKEN;
+        addCombatMessage("You remove the window barricade.", "info");
+      }
+      
+      return true;
+    }
+
+    function interactWithStairs(x, y, floor, isUp) {
+      if (isUp && floor < 10) { // Max 10 floors
+        player.floor = floor + 1;
+        addCombatMessage("You go upstairs.", "info");
+      } else if (!isUp && floor > 0) {
+        player.floor = floor - 1;
+        addCombatMessage("You go downstairs.", "info");
+      } else {
+        addCombatMessage("You can't go any further.", "info");
+      }
+      renderMap();
     }
 
     // Combat system
@@ -1071,7 +1539,7 @@
         // Chance to drop loot
         if (Math.random() < 0.3) {
           const loot = generateLoot();
-          containers[`${zombie.x},${zombie.y}`] = loot.slice(0, 1);
+          containers[`${zombie.x},${zombie.y},${zombie.floor}`] = loot.slice(0, 1);
         }
       }
     }
@@ -1127,18 +1595,29 @@
       });
     }
 
-    // Render map and entities
+    // Render map and entities with infinite map support
     function renderMap() {
       isoMap.innerHTML = "";
 
-      // Draw tiles
-      for (let y = 0; y < MAP_ROWS; y++) {
-        for (let x = 0; x < MAP_COLS; x++) {
-          const tileType = mapData[y][x];
+      // Calculate viewport bounds
+      const startX = player.x - Math.floor(VIEWPORT_WIDTH / 2);
+      const endX = player.x + Math.floor(VIEWPORT_WIDTH / 2);
+      const startY = player.y - Math.floor(VIEWPORT_HEIGHT / 2);
+      const endY = player.y + Math.floor(VIEWPORT_HEIGHT / 2);
+
+      // Draw tiles in viewport
+      for (let y = startY; y <= endY; y++) {
+        for (let x = startX; x <= endX; x++) {
+          const tileType = getTileAt(x, y, player.floor);
           const tile = document.createElement("div");
           tile.classList.add("iso-tile");
-          tile.style.left = x * TILE_WIDTH + "px";
-          tile.style.top = y * TILE_HEIGHT + "px";
+          
+          // Calculate screen position relative to viewport
+          const screenX = (x - startX) * TILE_WIDTH;
+          const screenY = (y - startY) * TILE_HEIGHT;
+          
+          tile.style.left = screenX + "px";
+          tile.style.top = screenY + "px";
 
           switch (tileType) {
             case TILE_TYPES.GROUND:
@@ -1153,9 +1632,88 @@
               tile.classList.add("tree");
               tile.textContent = "♣";
               break;
-            case TILE_TYPES.BUILDING:
+            case TILE_TYPES.WALL:
               tile.classList.add("building");
               tile.textContent = "█";
+              break;
+            case TILE_TYPES.FLOOR:
+              tile.classList.add("ground");
+              tile.textContent = "·";
+              tile.style.backgroundColor = "#3a3a2a";
+              break;
+            case TILE_TYPES.DOOR:
+              const doorKey = `${x},${y},${player.floor}`;
+              const door = doors[doorKey];
+              tile.classList.add("door");
+              tile.tabIndex = 0;
+              tile.setAttribute("role", "button");
+              tile.setAttribute("aria-label", `Door at position ${x},${y}`);
+              if (door) {
+                switch (door.state) {
+                  case DOOR_STATES.OPEN:
+                    tile.textContent = "/";
+                    tile.style.color = "#0f0";
+                    break;
+                  case DOOR_STATES.CLOSED:
+                    tile.textContent = "+";
+                    tile.style.color = "#fa0";
+                    break;
+                  case DOOR_STATES.BARRICADED:
+                    tile.textContent = "B";
+                    tile.style.color = "#f44";
+                    break;
+                  default:
+                    tile.textContent = "+";
+                }
+              } else {
+                tile.textContent = "+";
+              }
+              tile.addEventListener("click", () => {
+                const distance = Math.abs(player.x - x) + Math.abs(player.y - y);
+                if (distance === 1) {
+                  interactWithDoor(x, y, player.floor);
+                  renderMap();
+                } else {
+                  addCombatMessage("Too far to interact!", "info");
+                }
+              });
+              break;
+            case TILE_TYPES.WINDOW:
+              const windowKey = `${x},${y},${player.floor}`;
+              const window = windows[windowKey];
+              tile.classList.add("window");
+              tile.tabIndex = 0;
+              tile.setAttribute("role", "button");
+              tile.setAttribute("aria-label", `Window at position ${x},${y}`);
+              if (window) {
+                switch (window.state) {
+                  case WINDOW_STATES.INTACT:
+                    tile.textContent = "□";
+                    tile.style.color = "#4af";
+                    break;
+                  case WINDOW_STATES.BROKEN:
+                    tile.textContent = "▣";
+                    tile.style.color = "#f44";
+                    break;
+                  case WINDOW_STATES.BARRICADED:
+                    tile.textContent = "B";
+                    tile.style.color = "#f44";
+                    break;
+                  default:
+                    tile.textContent = "□";
+                }
+              } else {
+                tile.textContent = "□";
+              }
+              tile.addEventListener("click", () => {
+                const distance = Math.abs(player.x - x) + Math.abs(player.y - y);
+                if (distance === 1) {
+                  interactWithWindow(x, y, player.floor);
+                  renderMap();
+                } else {
+                  addCombatMessage("Too far to interact!", "info");
+                }
+              });
               break;
             case TILE_TYPES.CONTAINER:
               tile.classList.add("container");
@@ -1171,9 +1729,42 @@
                 }
               });
               break;
+            case TILE_TYPES.STAIRS_UP:
+              tile.classList.add("stairs");
+              tile.textContent = "▲";
+              tile.style.color = "#4f4";
+              tile.tabIndex = 0;
+              tile.setAttribute("role", "button");
+              tile.setAttribute("aria-label", `Stairs up at position ${x},${y}`);
+              tile.addEventListener("click", () => {
+                const distance = Math.abs(player.x - x) + Math.abs(player.y - y);
+                if (distance === 0) {
+                  interactWithStairs(x, y, player.floor, true);
+                } else {
+                  addCombatMessage("You need to be on the stairs to use them!", "info");
+                }
+              });
+              break;
+            case TILE_TYPES.STAIRS_DOWN:
+              tile.classList.add("stairs");
+              tile.textContent = "▼";
+              tile.style.color = "#44f";
+              tile.tabIndex = 0;
+              tile.setAttribute("role", "button");
+              tile.setAttribute("aria-label", `Stairs down at position ${x},${y}`);
+              tile.addEventListener("click", () => {
+                const distance = Math.abs(player.x - x) + Math.abs(player.y - y);
+                if (distance === 0) {
+                  interactWithStairs(x, y, player.floor, false);
+                } else {
+                  addCombatMessage("You need to be on the stairs to use them!", "info");
+                }
+              });
+              break;
             case TILE_TYPES.ROAD:
               tile.classList.add("ground");
               tile.textContent = "=";
+              tile.style.backgroundColor = "#4a4a4a";
               break;
             default:
               tile.classList.add("ground");
@@ -1183,52 +1774,82 @@
         }
       }
 
-      // Draw dead zombies
+      // Draw dead zombies in viewport
       deadZombies.forEach((z) => {
-        const zDiv = document.createElement("div");
-        zDiv.classList.add("iso-tile", "dead-zombie");
-        zDiv.style.left = z.x * TILE_WIDTH + "px";
-        zDiv.style.top = z.y * TILE_HEIGHT + "px";
-        zDiv.textContent = "x";
-        zDiv.title = `Dead ${z.type}`;
-        isoMap.appendChild(zDiv);
+        if (z.floor !== player.floor) return;
+        
+        if (z.x >= startX && z.x <= endX && z.y >= startY && z.y <= endY) {
+          const zDiv = document.createElement("div");
+          zDiv.classList.add("iso-tile", "dead-zombie");
+          zDiv.style.left = (z.x - startX) * TILE_WIDTH + "px";
+          zDiv.style.top = (z.y - startY) * TILE_HEIGHT + "px";
+          zDiv.textContent = "x";
+          zDiv.title = `Dead ${z.type}`;
+          isoMap.appendChild(zDiv);
+        }
       });
 
-      // Draw zombies
+      // Draw zombies in viewport
       zombies.forEach((z) => {
-        const zDiv = document.createElement("div");
-        zDiv.classList.add("iso-tile", "zombie");
-        zDiv.style.left = z.x * TILE_WIDTH + "px";
-        zDiv.style.top = z.y * TILE_HEIGHT + "px";
-        zDiv.textContent = z.template.char;
-        zDiv.title = `${z.template.name} (${z.health}/${z.maxHealth} HP)`;
-        zDiv.setAttribute("aria-label", `${z.template.name} at ${z.x},${z.y}`);
-        zDiv.addEventListener("click", () => {
-          if (Math.abs(z.x - player.x) <= 1 && Math.abs(z.y - player.y) <= 1) {
-            playerAttackZombie(z);
-            renderMap();
-            updatePlayerStats();
-          }
-        });
-        isoMap.appendChild(zDiv);
+        if (z.floor !== player.floor) return;
+        
+        if (z.x >= startX && z.x <= endX && z.y >= startY && z.y <= endY) {
+          const zDiv = document.createElement("div");
+          zDiv.classList.add("iso-tile", "zombie");
+          zDiv.style.left = (z.x - startX) * TILE_WIDTH + "px";
+          zDiv.style.top = (z.y - startY) * TILE_HEIGHT + "px";
+          zDiv.textContent = z.template.char;
+          zDiv.title = `${z.template.name} (${z.health}/${z.maxHealth} HP)`;
+          zDiv.setAttribute("aria-label", `${z.template.name} at ${z.x},${z.y}`);
+          zDiv.addEventListener("click", () => {
+            if (Math.abs(z.x - player.x) <= 1 && Math.abs(z.y - player.y) <= 1) {
+              playerAttackZombie(z);
+              renderMap();
+              updatePlayerStats();
+            }
+          });
+          isoMap.appendChild(zDiv);
+        }
       });
 
       // Draw player
       const playerDiv = document.createElement("div");
       playerDiv.classList.add("iso-tile", "player");
-      playerDiv.style.left = player.x * TILE_WIDTH + "px";
-      playerDiv.style.top = player.y * TILE_HEIGHT + "px";
+      playerDiv.style.left = (player.x - startX) * TILE_WIDTH + "px";
+      playerDiv.style.top = (player.y - startY) * TILE_HEIGHT + "px";
       playerDiv.textContent = "@";
       playerDiv.setAttribute("aria-label", "Player character");
       isoMap.appendChild(playerDiv);
+
+      // Add floor indicator
+      const floorIndicator = document.createElement("div");
+      floorIndicator.style.position = "absolute";
+      floorIndicator.style.top = "10px";
+      floorIndicator.style.right = "10px";
+      floorIndicator.style.color = "#0f0";
+      floorIndicator.style.fontSize = "12px";
+      floorIndicator.style.fontWeight = "bold";
+      floorIndicator.style.zIndex = "10";
+      floorIndicator.style.backgroundColor = "rgba(0,0,0,0.7)";
+      floorIndicator.style.padding = "4px 8px";
+      floorIndicator.style.borderRadius = "4px";
+      floorIndicator.textContent = `Floor: ${player.floor}`;
+      isoMap.appendChild(floorIndicator);
     }
 
     // Open container loot UI
     function openContainer(x, y) {
-      const key = `${x},${y}`;
+      const key = `${x},${y},${player.floor}`;
       const loot = containers[key];
       if (!loot || loot.length === 0) {
         addCombatMessage("Container is empty.", "info");
+        return;
+      }
+      
+      // Check if player is adjacent
+      const distance = Math.abs(player.x - x) + Math.abs(player.y - y);
+      if (distance > 1) {
+        addCombatMessage("Too far from container!", "info");
         return;
       }
       
@@ -1650,13 +2271,13 @@
       dayProgress.style.width = `${progressPercent}%`;
     }
 
-    // Player movement with arrow keys or WASD
-    function canWalk(x, y) {
-      if (x < 0 || y < 0 || x >= MAP_COLS || y >= MAP_ROWS) return false;
-      const tile = mapData[y][x];
+    // Zombie movement helper
+    function canWalkZombie(x, y, floor = 0) {
+      const tile = getTileAt(x, y, floor);
       return (
         tile !== TILE_TYPES.WATER &&
-        tile !== TILE_TYPES.BUILDING &&
+        tile !== TILE_TYPES.WALL &&
+        tile !== TILE_TYPES.TREE &&
         tile !== TILE_TYPES.CONTAINER
       );
     }
@@ -1664,21 +2285,101 @@
     function movePlayer(dx, dy) {
       const newX = player.x + dx;
       const newY = player.y + dy;
-      if (canWalk(newX, newY)) {
-        player.x = newX;
-        player.y = newY;
-        
-        // Increase fatigue slightly
-        player.stats.fatigue = Math.min(100, player.stats.fatigue + 0.1);
-        
-        renderMap();
-        updatePlayerStats();
+
+      // Check if tile is passable
+      const tileType = getTileAt(newX, newY, player.floor);
+      if (tileType === TILE_TYPES.WATER || tileType === TILE_TYPES.TREE || tileType === TILE_TYPES.WALL) {
+        return;
+      }
+
+      // Check for door interaction
+      if (tileType === TILE_TYPES.DOOR) {
+        const doorKey = `${newX},${newY},${player.floor}`;
+        const door = doors[doorKey];
+        if (door && door.state === DOOR_STATES.CLOSED) {
+          interactWithDoor(newX, newY, player.floor);
+          return;
+        } else if (door && door.state === DOOR_STATES.BARRICADED) {
+          addCombatMessage("The door is barricaded.", "info");
+          return;
+        }
+      }
+
+      // Check for zombies at target position
+      const zombieAtPos = zombies.find(z => z.x === newX && z.y === newY && z.floor === player.floor);
+      if (zombieAtPos) {
+        playerAttackZombie(zombieAtPos);
+        return;
+      }
+
+      // Check for containers
+      if (tileType === TILE_TYPES.CONTAINER) {
+        const containerKey = `${newX},${newY},${player.floor}`;
+        if (containers[containerKey] && containers[containerKey].length > 0) {
+          const loot = containers[containerKey];
+          let lootMessage = "Found: ";
+          
+          for (const item of loot) {
+            if (player.stats.weight + (item.weight || 0) <= player.stats.maxWeight) {
+              player.inventory.push(item);
+              player.stats.weight += item.weight || 0;
+              lootMessage += `${item.name}, `;
+            } else {
+              addCombatMessage("Inventory full! Can't pick up more items.", "info");
+              break;
+            }
+          }
+          
+          containers[containerKey] = [];
+          addCombatMessage(lootMessage.slice(0, -2), "info");
+          renderInventory();
+        } else {
+          addCombatMessage("Container is empty.", "info");
+        }
+      }
+
+      // Check for stairs
+      if (tileType === TILE_TYPES.STAIRS_UP) {
+        interactWithStairs(newX, newY, player.floor, true);
+        return;
+      } else if (tileType === TILE_TYPES.STAIRS_DOWN) {
+        interactWithStairs(newX, newY, player.floor, false);
+        return;
+      }
+
+      // Move player
+      player.x = newX;
+      player.y = newY;
+      
+      // Update chunk coordinates
+      player.chunkX = Math.floor(player.x / CHUNK_SIZE);
+      player.chunkY = Math.floor(player.y / CHUNK_SIZE);
+      
+      // Load new chunks if needed
+      loadNearbyChunks();
+      
+      // Update player stats
+      player.stats.fatigue = Math.min(100, player.stats.fatigue + 0.5);
+      
+      renderMap();
+      updatePlayerStats();
+    }
+
+    // Load chunks around player
+    function loadNearbyChunks() {
+      for (let chunkY = player.chunkY - RENDER_DISTANCE; chunkY <= player.chunkY + RENDER_DISTANCE; chunkY++) {
+        for (let chunkX = player.chunkX - RENDER_DISTANCE; chunkX <= player.chunkX + RENDER_DISTANCE; chunkX++) {
+          getChunk(chunkX, chunkY);
+        }
       }
     }
 
-    // Enhanced zombie AI
+    // Enhanced zombie AI with floor support
     function updateZombies() {
       zombies.forEach((z) => {
+        // Only update zombies on the same floor as player
+        if (z.floor !== player.floor) return;
+        
         const distanceToPlayer = Math.abs(z.x - player.x) + Math.abs(z.y - player.y);
         
         // State machine
@@ -1696,7 +2397,7 @@
               for (const [dx, dy] of shuffled) {
                 const nx = z.x + dx;
                 const ny = z.y + dy;
-                if (canWalkZombie(nx, ny)) {
+                if (canWalkZombie(nx, ny, z.floor)) {
                   z.x = nx;
                   z.y = ny;
                   break;
@@ -1713,9 +2414,9 @@
               
               // Try to move towards player
               if (Math.random() < z.template.speed) {
-                if (dx !== 0 && canWalkZombie(z.x + dx, z.y)) {
+                if (dx !== 0 && canWalkZombie(z.x + dx, z.y, z.floor)) {
                   z.x += dx;
-                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy)) {
+                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy, z.floor)) {
                   z.y += dy;
                 }
               }
@@ -1741,9 +2442,9 @@
               const dy = Math.sign(z.lastPlayerPos.y - z.y);
               
               if (Math.random() < 0.5) {
-                if (dx !== 0 && canWalkZombie(z.x + dx, z.y)) {
+                if (dx !== 0 && canWalkZombie(z.x + dx, z.y, z.floor)) {
                   z.x += dx;
-                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy)) {
+                } else if (dy !== 0 && canWalkZombie(z.x, z.y + dy, z.floor)) {
                   z.y += dy;
                 }
               }
@@ -1762,176 +2463,83 @@
             break;
         }
       });
-      
-      renderMap();
     }
 
-    function canWalkZombie(x, y) {
-      if (x < 0 || y < 0 || x >= MAP_COLS || y >= MAP_ROWS) return false;
-      const tile = mapData[y][x];
-      return (
-        tile !== TILE_TYPES.WATER &&
-        tile !== TILE_TYPES.BUILDING &&
-        tile !== TILE_TYPES.CONTAINER &&
-        !(x === player.x && y === player.y) &&
-        !zombies.some((other) => other.x === x && other.y === y)
-      );
-    }
-
-    // Survival mechanics
-    function updateSurvivalNeeds() {
-      // Increase hunger and thirst over time
-      player.stats.hunger = Math.min(100, player.stats.hunger + 0.02);
-      player.stats.thirst = Math.min(100, player.stats.thirst + 0.03);
-      
-      // Health effects from hunger/thirst
-      if (player.stats.hunger > 80) {
-        player.stats.health = Math.max(0, player.stats.health - 0.1);
-        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
-      }
-      if (player.stats.thirst > 80) {
-        player.stats.health = Math.max(0, player.stats.health - 0.2);
-        player.stats.stress = Math.min(100, player.stats.stress + 0.2);
-      }
-      
-      // Fatigue effects
-      if (player.stats.fatigue > 80) {
-        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
-      }
-      
-      // Stress reduction over time if low
-      if (player.stats.stress < 20) {
-        player.stats.stress = Math.max(0, player.stats.stress - 0.05);
-      }
-      
-      updatePlayerStats();
-    }
-
-    // Map interface: draw simplified map on canvas
+    // Map canvas rendering for overview
     function renderMapCanvas() {
       const ctx = mapCtx;
       const cw = mapCanvas.width;
       const ch = mapCanvas.height;
       ctx.clearRect(0, 0, cw, ch);
 
-      const tileW = cw / MAP_COLS;
-      const tileH = ch / MAP_ROWS;
+      // Draw a simplified overview of the area around the player
+      const viewRange = 20;
+      const tileSize = Math.min(cw / (viewRange * 2), ch / (viewRange * 2));
 
-      // Draw tiles
-      for (let y = 0; y < MAP_ROWS; y++) {
-        for (let x = 0; x < MAP_COLS; x++) {
-          const tile = mapData[y][x];
-          switch (tile) {
+      for (let y = -viewRange; y < viewRange; y++) {
+        for (let x = -viewRange; x < viewRange; x++) {
+          const worldX = player.x + x;
+          const worldY = player.y + y;
+          const tileType = getTileAt(worldX, worldY, player.floor);
+          
+          const screenX = (x + viewRange) * tileSize;
+          const screenY = (y + viewRange) * tileSize;
+
+          switch (tileType) {
             case TILE_TYPES.GROUND:
-              ctx.fillStyle = "#004400";
+              ctx.fillStyle = "#2a4a2a";
               break;
             case TILE_TYPES.WATER:
-              ctx.fillStyle = "#000088";
+              ctx.fillStyle = "#1a4a8a";
               break;
             case TILE_TYPES.TREE:
-              ctx.fillStyle = "#006600";
+              ctx.fillStyle = "#4a6a2a";
               break;
-            case TILE_TYPES.BUILDING:
-              ctx.fillStyle = "#884400";
+            case TILE_TYPES.WALL:
+              ctx.fillStyle = "#6a4a2a";
+              break;
+            case TILE_TYPES.FLOOR:
+              ctx.fillStyle = "#5a5a3a";
+              break;
+            case TILE_TYPES.DOOR:
+              ctx.fillStyle = "#8a6a4a";
+              break;
+            case TILE_TYPES.WINDOW:
+              ctx.fillStyle = "#6a8a8a";
               break;
             case TILE_TYPES.CONTAINER:
-              ctx.fillStyle = "#aaaa00";
+              ctx.fillStyle = "#8a6a2a";
               break;
             case TILE_TYPES.ROAD:
-              ctx.fillStyle = "#666666";
+              ctx.fillStyle = "#4a4a4a";
               break;
             default:
-              ctx.fillStyle = "#004400";
+              ctx.fillStyle = "#2a4a2a";
           }
-          ctx.fillRect(x * tileW, y * tileH, tileW, tileH);
+          
+          ctx.fillRect(screenX, screenY, tileSize, tileSize);
         }
       }
 
+      // Draw player position
+      ctx.fillStyle = "#4f4";
+      const playerScreenX = viewRange * tileSize;
+      const playerScreenY = viewRange * tileSize;
+      ctx.fillRect(playerScreenX, playerScreenY, tileSize, tileSize);
+
       // Draw zombies
-      ctx.fillStyle = "#ff0000";
-      zombies.forEach((z) => {
-        ctx.fillRect(z.x * tileW, z.y * tileH, tileW, tileH);
-      });
-
-      // Draw player
-      ctx.fillStyle = "#ffff00";
-      ctx.fillRect(player.x * tileW, player.y * tileH, tileW, tileH);
-    }
-
-    // Event listeners
-    window.addEventListener("keydown", (e) => {
-      switch (e.key) {
-        case "ArrowUp":
-        case "w":
-        case "W":
-          movePlayer(0, -1);
-          break;
-        case "ArrowDown":
-        case "s":
-        case "S":
-          movePlayer(0, 1);
-          break;
-        case "ArrowLeft":
-        case "a":
-        case "A":
-          movePlayer(-1, 0);
-          break;
-        case "ArrowRight":
-        case "d":
-        case "D":
-          movePlayer(1, 0);
-          break;
-      }
-    });
-
-    // Button event listeners
-    btnEquip.addEventListener("click", equipItem);
-    btnUse.addEventListener("click", useItem);
-    btnDrop.addEventListener("click", dropItem);
-
-    // Tooltip for inventory items
-    inventoryContainer.addEventListener("mousemove", (e) => {
-      const target = e.target.closest(".inventory-item");
-      if (!target) {
-        tooltip.style.display = "none";
-        return;
-      }
-      const index = parseInt(target.dataset.index);
-      const item = player.inventory[index];
-      if (!item) return;
-      
-      const rect = target.getBoundingClientRect();
-      tooltip.style.left = rect.left + window.scrollX + rect.width / 2 + "px";
-      tooltip.style.top = rect.top + window.scrollY - 60 + "px";
-      
-      let tooltipText = `${item.name}\n${item.description}`;
-      if (item.damage) tooltipText += `\nDamage: ${item.damage}`;
-      if (item.protection) tooltipText += `\nProtection: ${item.protection}`;
-      if (item.durability !== undefined) tooltipText += `\nDurability: ${item.durability}/${item.maxDurability}`;
-      if (item.weight) tooltipText += `\nWeight: ${item.weight}`;
-      
-      tooltip.textContent = tooltipText;
-      tooltip.style.display = "block";
-    });
-    
-    inventoryContainer.addEventListener("mouseleave", () => {
-      tooltip.style.display = "none";
-    });
-
-    // Section toggling
-    const btnInventory = document.getElementById("btn-inventory");
-    const btnCrafting = document.getElementById("btn-crafting");
-    const btnSkills = document.getElementById("btn-skills");
-    const btnMap = document.getElementById("btn-map");
-
-    const inventorySection = document.getElementById("inventory-section");
-    const craftingSection = document.getElementById("crafting-section");
-    const skillsSection = document.getElementById("skills-section");
-    const mapSection = document.getElementById("map-section");
-
-    function setActiveButton(activeBtn) {
-      [btnInventory, btnCrafting, btnSkills, btnMap].forEach((btn) => {
-        btn.setAttribute("aria-pressed", btn === activeBtn ? "true" : "false");
+      ctx.fillStyle = "#f44";
+      zombies.forEach(zombie => {
+        if (zombie.floor !== player.floor) return;
+        
+        const dx = zombie.x - player.x;
+        const dy = zombie.y - player.y;
+        
+        if (Math.abs(dx) < viewRange && Math.abs(dy) < viewRange) {
+          const zombieScreenX = (dx + viewRange) * tileSize;
+          const zombieScreenY = (dy + viewRange) * tileSize;
+          ctx.fillRect(zombieScreenX, zombieScreenY, tileSize, tileSize);
+        }
       });
     }
 
@@ -1965,9 +2573,83 @@
       setActiveButton(btnMap);
     });
 
+    // Survival mechanics
+    function updateSurvivalNeeds() {
+      // Increase hunger and thirst over time
+      player.stats.hunger = Math.min(100, player.stats.hunger + 0.02);
+      player.stats.thirst = Math.min(100, player.stats.thirst + 0.03);
+      
+      // Health effects from hunger/thirst
+      if (player.stats.hunger > 80) {
+        player.stats.health = Math.max(0, player.stats.health - 0.1);
+        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
+      }
+      if (player.stats.thirst > 80) {
+        player.stats.health = Math.max(0, player.stats.health - 0.2);
+        player.stats.stress = Math.min(100, player.stats.stress + 0.2);
+      }
+      
+      // Fatigue effects
+      if (player.stats.fatigue > 80) {
+        player.stats.stress = Math.min(100, player.stats.stress + 0.1);
+      }
+      
+      // Stress reduction over time if low
+      if (player.stats.stress < 20) {
+        player.stats.stress = Math.max(0, player.stats.stress - 0.05);
+      }
+      
+      updatePlayerStats();
+    }
+
+    // Spawn zombies around the player
+    function spawnZombies() {
+      // Spawn some zombies in the nearby area
+      for (let i = 0; i < 5; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 5 + Math.random() * 10;
+        const x = Math.floor(player.x + Math.cos(angle) * distance);
+        const y = Math.floor(player.y + Math.sin(angle) * distance);
+        
+        // Don't spawn on water or walls
+        const tileType = getTileAt(x, y, player.floor);
+        if (tileType !== TILE_TYPES.WATER && tileType !== TILE_TYPES.WALL) {
+          const zombieType = Math.random() < 0.7 ? "walker" : "runner";
+          const template = ZOMBIE_TEMPLATES[zombieType];
+          
+          const zombie = {
+            x: x,
+            y: y,
+            floor: player.floor,
+            type: zombieType,
+            template: template,
+            health: template.health,
+            maxHealth: template.health,
+            state: "wandering",
+            lastPlayerPos: null,
+            searchTimer: 0
+          };
+          
+          zombies.push(zombie);
+        }
+      }
+    }
+
     // Initialize game
     function init() {
-      generateMap();
+      // Initialize player position and chunk coordinates
+      player.x = 0;
+      player.y = 0;
+      player.floor = 0;
+      player.chunkX = 0;
+      player.chunkY = 0;
+      
+      // Load initial chunks around player
+      loadNearbyChunks();
+      
+      // Spawn some initial zombies
+      spawnZombies();
+      
       renderMap();
       renderInventory();
       renderCrafting();
@@ -1977,10 +2659,15 @@
       updateTime();
       
       // Add some starting items
-      const startingItems = ["kitchen_knife", "bandage", "canned_beans", "water_bottle"];
+      const startingItems = ["kitchen_knife", "bandage", "canned_beans", "water_bottle", "hammer", "wood_plank", "nails"];
       startingItems.forEach(itemId => {
         if (ITEM_DATABASE[itemId]) {
           const item = createItem(itemId, ITEM_DATABASE[itemId]);
+          if (item.stackable && itemId === "wood_plank") {
+            item.quantity = 5;
+          } else if (item.stackable && itemId === "nails") {
+            item.quantity = 20;
+          }
           player.inventory.push(item);
           player.stats.weight += item.weight || 0;
         }
@@ -1990,6 +2677,8 @@
       addCombatMessage("Welcome to the zombie apocalypse! Use WASD or arrow keys to move.", "info");
       addCombatMessage("Click on zombies to attack them when adjacent.", "info");
       addCombatMessage("Search containers for loot and craft items to survive.", "info");
+      addCombatMessage("Use doors and windows by clicking on them. Barricade them for protection!", "info");
+      addCombatMessage("Use stairs to move between floors in buildings.", "info");
     }
 
     // Update loop for zombies, time, and survival needs
